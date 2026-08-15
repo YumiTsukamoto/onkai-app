@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ドレミあそび</title>
 <style>
-  html,body{margin:0;padding:0;background:#141C26;min-height:100%}
+  html,body{margin:0;padding:0;background:#FFF6E5;min-height:100%}
   #root{min-height:100vh}
   #err{display:none; position:fixed; left:0; right:0; bottom:0; z-index:9999;
     background:#8A1F1A; color:#fff; padding:14px 16px; font:13px/1.6 -apple-system,sans-serif;
@@ -321,11 +321,12 @@ function useSpeech(onNotes) {
    ═════════════════════════════════════════════ */
 function useNoteGame(sequence, {
   onClear,
-  stepMs = 380
+  stepMs = 380,
+  startNotice = "さいしょの おとから じゅんばんに あがっていこう"
 } = {}) {
   const [idx, setIdx] = useState(0);
   const [judge, setJudge] = useState(null);
-  const [notice, setNotice] = useState("さいしょの おとから じゅんばんに！");
+  const [notice, setNotice] = useState(startNotice);
   const [done, setDone] = useState(false);
   const [misses, setMisses] = useState(0);
   const seqRef = useRef(sequence);
@@ -339,6 +340,10 @@ function useNoteGame(sequence, {
   useEffect(() => {
     clearCbRef.current = onClear;
   }, [onClear]);
+  const noticeRef = useRef(startNotice);
+  useEffect(() => {
+    noticeRef.current = startNotice;
+  }, [startNotice]);
   const reset = useCallback(nextSeq => {
     if (nextSeq) seqRef.current = nextSeq;
     queueRef.current = [];
@@ -349,7 +354,7 @@ function useNoteGame(sequence, {
     setJudge(null);
     setDone(false);
     setMisses(0);
-    setNotice("さいしょの おとから じゅんばんに！");
+    setNotice(noticeRef.current);
   }, []);
   useEffect(() => {
     seqRef.current = sequence;
@@ -507,7 +512,7 @@ function PlayBar({
     onClick: onNext
   }, "つぎのもんだい")), !speech.supported && /*#__PURE__*/React.createElement("p", {
     className: "fallback-note"
-  }, "このブラウザは音声にんしきに たいおうしていません。 iPhone は Safari、パソコンは Chrome でひらいてください。"));
+  }, "このブラウザは音声にんしきに たいおうしていません。 iPhone は Safari、Android・パソコンは Chrome でひらいてください。"));
 }
 function Cleared({
   points
@@ -716,7 +721,8 @@ function WheelGame({
     onClear: p => {
       setPoints(p);
       addScore(p);
-    }
+    },
+    startNotice: up ? "さいしょの おとから じゅんばんに あがっていこう" : "さいしょの おとから じゅんばんに さがっていこう"
   });
   const speech = useSpeech(game.feed);
   const next = () => {
@@ -822,12 +828,12 @@ const GAMES = [{
 }, {
   id: "wheel-up",
   name: "かんらんしゃ",
-  desc: "ぐるっと 1しゅう のぼろう",
+  desc: "ぐるっと 1しゅう まわろう",
   icon: "wheel"
 }, {
   id: "wheel-down",
   name: "ぎゃくまわり かんらんしゃ",
-  desc: "はんたいに まわって くだろう",
+  desc: "はんたいむきに 1しゅう まわろう",
   icon: "wheel-r"
 }];
 function GameIcon({
@@ -897,7 +903,7 @@ function Home({
     className: "hero-eyebrow"
   }, "こえで あそぶ おんかいゲーム"), /*#__PURE__*/React.createElement("h1", {
     className: "hero-title"
-  }, "ドレミ", /*#__PURE__*/React.createElement("br", null), "あそび"), /*#__PURE__*/React.createElement("div", {
+  }, "ドレミあそび"), /*#__PURE__*/React.createElement("div", {
     className: "hero-score"
   }, /*#__PURE__*/React.createElement("span", {
     className: "hero-score-label"
@@ -921,7 +927,7 @@ function Home({
     className: "card-go"
   }, "›")))), /*#__PURE__*/React.createElement("p", {
     className: "home-note"
-  }, "マイクを つかいます。iPhone は Safari、パソコンは Chrome でひらいてね。"));
+  }, "マイクを つかいます。iPhone は Safari、Android・パソコンは Chrome でひらいてね。"));
 }
 
 /* ═════════════════════════════════════════════
@@ -972,13 +978,13 @@ function App() {
    ═════════════════════════════════════════════ */
 const CSS = `
 .app{
-  --night:#141C26; --night-2:#1D2836;
-  --lane:#E2A751; --lane-2:#C1802F; --gutter:#223143;
-  --pin:#FBF6EC; --stripe:#E2453C;
-  --amber:#FFC145; --mint:#4FD1C5; --ink:#0E141C;
+  --cream:#FFF6E5; --paper:#FFFFFF; --sand:#FBEFDA;
+  --ink:#3B2F26; --sub:#8D7C6A; --line:#E8DBC4;
+  --orange:#F0983C; --amber:#F5C63D; --mint:#2FB5A4; --red:#E2453C;
+  --sky:#D3E8F0; --wood:#EBBD75; --wood-2:#D69B45;
   font-family:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Yu Gothic",sans-serif;
-  background:var(--night); color:var(--pin);
-  min-height:100%; padding:16px 16px 32px; box-sizing:border-box;
+  background:var(--cream); color:var(--ink);
+  min-height:100%; padding:16px 16px 36px; box-sizing:border-box;
   max-width:720px; margin:0 auto;
 }
 .app *{box-sizing:border-box}
@@ -986,60 +992,56 @@ const CSS = `
 .app button:focus-visible{outline:3px solid var(--mint); outline-offset:3px}
 
 /* ── トップ画面 ── */
-.hero{padding:18px 4px 26px}
-.hero-eyebrow{font-size:11px; letter-spacing:.22em; color:#7D8FA3; font-weight:800}
+.hero{padding:16px 4px 24px}
+.hero-eyebrow{font-size:11px; letter-spacing:.2em; color:var(--sub); font-weight:800}
 .hero-title{
-  margin:8px 0 0; font-size:46px; line-height:1.05; font-weight:800;
-  letter-spacing:.02em; color:var(--pin);
+  margin:8px 0 0; font-size:clamp(30px, 10.5vw, 44px); line-height:1.1;
+  font-weight:800; letter-spacing:.01em; color:var(--ink); white-space:nowrap;
 }
 .hero-title::after{
-  content:""; display:block; width:64px; height:6px; margin-top:14px;
-  background:var(--amber); border-radius:3px;
+  content:""; display:block; width:64px; height:6px; margin-top:12px;
+  background:var(--orange); border-radius:3px;
 }
-.hero-score{margin-top:18px}
-.hero-score-label{font-size:11px; letter-spacing:.18em; color:#7D8FA3; font-weight:800}
-.hero-score-num{
-  margin-left:10px; font-size:26px; font-weight:800; color:var(--amber);
-  text-shadow:0 0 14px rgba(255,193,69,.4);
-}
+.hero-score{margin-top:16px}
+.hero-score-label{font-size:11px; letter-spacing:.16em; color:var(--sub); font-weight:800}
+.hero-score-num{margin-left:10px; font-size:26px; font-weight:800; color:var(--orange)}
 .cards{display:flex; flex-direction:column; gap:10px}
 .card{
   display:flex; align-items:center; gap:14px; width:100%; text-align:left; cursor:pointer;
-  padding:14px 16px; border-radius:16px; background:var(--night-2);
-  border:2px solid #2E3D4F; color:var(--pin);
-  transition:transform .14s ease, border-color .14s ease;
+  padding:14px 16px; border-radius:18px; background:var(--paper);
+  border:2px solid var(--line); color:var(--ink);
+  box-shadow:0 3px 0 var(--line);
+  transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease;
 }
-.card:hover{transform:translateY(-2px); border-color:var(--amber)}
-.card-icon{width:38px; height:44px; flex:none}
-.ico-line{fill:none; stroke:#6E8299; stroke-width:3}
-.ico-accent{fill:none; stroke:var(--amber); stroke-width:5; stroke-linecap:round}
-.card-text{display:flex; flex-direction:column; gap:3px; flex:1}
+.card:hover{transform:translateY(-2px); border-color:var(--orange); box-shadow:0 5px 0 #F3D6A8}
+.card:active{transform:translateY(1px); box-shadow:0 1px 0 var(--line)}
+.card-icon{width:40px; height:46px; flex:none}
+.card-icon .pin-body{stroke:#B9A98F; stroke-width:3; stroke-linejoin:round}
+.ico-line{fill:none; stroke:#D3DAE1; stroke-width:3}
+.card-text{display:flex; flex-direction:column; gap:3px; flex:1; min-width:0}
 .card-name{font-size:18px; font-weight:800}
-.card-desc{font-size:12px; color:#8FA3B8}
-.card-go{font-size:26px; color:#5A6E86; line-height:1}
-.home-note{margin:22px 4px 0; font-size:12px; color:#7D8FA3; line-height:1.8}
+.card-desc{font-size:12px; color:var(--sub)}
+.card-go{font-size:26px; color:#C9BBA6; line-height:1}
+.home-note{margin:22px 4px 0; font-size:12px; color:var(--sub); line-height:1.8}
 
 /* ── ゲーム共通 ── */
 .topbar{display:flex; align-items:center; gap:12px; padding:2px 0 14px}
 .back{
   width:38px; height:38px; border-radius:50%; flex:none; cursor:pointer;
-  background:var(--night-2); border:2px solid #2E3D4F; color:var(--pin);
+  background:var(--paper); border:2px solid var(--line); color:var(--ink);
   font-size:22px; line-height:1; padding-bottom:3px;
 }
-.topbar-title{flex:1; font-size:17px; font-weight:800; letter-spacing:.04em}
-.topbar-score{
-  font-size:22px; font-weight:800; color:var(--amber);
-  text-shadow:0 0 12px rgba(255,193,69,.4);
-}
+.topbar-title{flex:1; font-size:17px; font-weight:800; letter-spacing:.03em}
+.topbar-score{font-size:22px; font-weight:800; color:var(--orange)}
 
 .prog{display:flex; gap:5px; flex-wrap:wrap; margin-bottom:12px}
 .slot{
-  min-width:32px; padding:4px 5px; border-radius:8px; text-align:center;
+  min-width:34px; padding:5px; border-radius:9px; text-align:center;
   font-size:15px; font-weight:800;
-  background:#26374A; color:#6F8398; border:2px solid #35485E;
+  background:var(--sand); color:#B5A491; border:2px solid var(--line);
   transition:background .25s ease, color .25s ease, transform .25s ease;
 }
-.slot.is-given{background:transparent; color:var(--pin); border-color:#5A6E86; border-style:dashed}
+.slot.is-given{background:var(--paper); color:var(--ink); border-color:#C9B79B; border-style:dashed}
 .slot.is-open{background:var(--amber); color:var(--ink); border-color:var(--amber); border-style:solid; transform:translateY(-2px)}
 
 .stage{position:relative}
@@ -1050,51 +1052,55 @@ const CSS = `
 }
 
 /* ── ボウリング ── */
-.lane{position:relative; height:320px; border-radius:14px; overflow:hidden; background:var(--gutter)}
+.lane{
+  position:relative; height:320px; border-radius:18px; overflow:hidden;
+  background:var(--sky); border:2px solid var(--line);
+}
 .lane-boards{
   position:absolute; inset:0;
-  clip-path:polygon(36% 6%, 64% 6%, 100% 100%, 0% 100%);
+  clip-path:polygon(36% 5%, 64% 5%, 100% 100%, 0% 100%);
   background:
-    repeating-linear-gradient(90deg, rgba(0,0,0,.10) 0 1px, transparent 1px 26px),
-    linear-gradient(180deg, var(--lane-2) 0%, var(--lane) 55%, #EFBD6E 100%);
+    repeating-linear-gradient(90deg, rgba(140,95,35,.13) 0 1px, transparent 1px 26px),
+    linear-gradient(180deg, var(--wood-2) 0%, var(--wood) 55%, #F6D6A2 100%);
 }
 .pins{position:absolute; inset:0}
 .pin-slot{position:absolute; top:7%; transform:translateX(-50%)}
 .pin{width:42px; transform-origin:50% 100%}
 .pin-inner{position:relative; transform-origin:50% 100%;
   transition:transform .34s cubic-bezier(.3,1.4,.5,1), opacity .34s ease}
-.pin-svg{display:block; width:42px; height:105px; filter:drop-shadow(0 6px 6px rgba(0,0,0,.28))}
-.pin-body{fill:var(--pin)}
-.pin-stripe{fill:var(--stripe)}
+.pin-svg{display:block; width:42px; height:105px; filter:drop-shadow(0 5px 5px rgba(90,60,20,.28))}
+.pin-body{fill:#FFFFFF}
+.pin-stripe{fill:var(--red)}
 .pin-label{
   position:absolute; top:-13px; left:50%; transform:translateX(-50%);
   width:32px; height:32px; border-radius:50%;
-  background:var(--pin); border:2.5px solid var(--ink); color:var(--ink);
+  background:#FFFFFF; border:2.5px solid var(--ink); color:var(--ink);
   font-size:14px; font-weight:800; display:grid; place-items:center; z-index:2;
 }
-.pin-label.is-hidden{background:#33475D; color:#9FB2C6; border-color:#0E141C}
+.pin-label.is-hidden{background:#E7EDF1; color:#9AA6B2; border-color:#9AA6B2}
 .pin--hit .pin-inner{transform:translateY(-4px) rotate(-4deg)}
-.pin--down .pin-inner{transform:rotate(-82deg) translate(-16px,10px); opacity:.55}
+.pin--down .pin-inner{transform:rotate(-82deg) translate(-16px,10px); opacity:.6}
 .ball{
   position:absolute; left:50%; bottom:6%; width:58px; height:58px; margin-left:-29px;
-  border-radius:50%; background:radial-gradient(circle at 32% 28%, #4B6E92, #16243A 70%);
-  box-shadow:0 8px 14px rgba(0,0,0,.4), inset -6px -8px 14px rgba(0,0,0,.4);
+  border-radius:50%; background:radial-gradient(circle at 32% 28%, #7FC1DE, #2E6E93 70%);
+  box-shadow:0 6px 10px rgba(60,90,110,.35), inset -6px -8px 14px rgba(20,60,90,.35);
   transition:left .3s ease-out, bottom .3s ease-out, transform .3s ease-out;
   display:flex; gap:4px; align-items:center; justify-content:center; padding-bottom:10px;
 }
 .ball.is-rolling{bottom:60%; transform:scale(.5) rotate(220deg)}
-.ball-hole{width:7px; height:7px; border-radius:50%; background:#0C1420}
+.ball-hole{width:7px; height:7px; border-radius:50%; background:#F3FAFD}
 
 /* ── かんらんしゃ ── */
 .wheel-wrap{
-  background:#FAF6EE; border-radius:14px; padding:16px; display:grid; place-items:center;
+  background:var(--paper); border:2px solid var(--line); border-radius:18px;
+  padding:16px; display:grid; place-items:center;
 }
 .wheel{width:100%; max-width:340px; height:auto}
 .wheel-rim{fill:none; stroke:#D3DAE1; stroke-width:2.6}
 .wheel-spoke{stroke:#D3DAE1; stroke-width:2.4}
 .wheel-hub{fill:#B6BFC8}
-.wheel-arrow{fill:none; stroke:#F0983C; stroke-width:2.2; stroke-linecap:round}
-.wheel-arrowhead{fill:#F0983C}
+.wheel-arrow{fill:none; stroke:var(--orange); stroke-width:2.2; stroke-linecap:round}
+.wheel-arrowhead{fill:var(--orange)}
 .gon-body{transition:fill .3s ease}
 .gon-arm{stroke:#FFFFFF; stroke-width:1.9; stroke-linecap:round}
 .gon-text{fill:#9AA6B2; font-size:7px; font-weight:800; transition:fill .3s ease}
@@ -1102,15 +1108,14 @@ const CSS = `
 .gon.is-open .gon-body{animation:gonPop .38s cubic-bezier(.2,1.6,.4,1)}
 @keyframes gonPop{from{transform:scale(.7); transform-origin:center} to{transform:scale(1)}}
 
-
 /* ── あたりバッジ ── */
 .atari{position:absolute; inset:0; display:grid; place-items:center; pointer-events:none;
   animation:pop .45s cubic-bezier(.2,1.5,.4,1)}
 @keyframes pop{from{transform:scale(.5); opacity:0} to{transform:scale(1); opacity:1}}
 .atari-sun{width:210px; height:210px; animation:spin 9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.atari-dot{fill:var(--pin)}
-.atari-core{fill:var(--pin)}
+.atari-dot{fill:var(--amber)}
+.atari-core{fill:var(--amber)}
 .atari-text{position:absolute; text-align:center; color:var(--ink)}
 .atari-word{display:block; font-size:34px; font-weight:800; letter-spacing:.06em}
 .atari-score{display:inline-block; margin-top:6px; padding:3px 12px;
@@ -1119,53 +1124,56 @@ const CSS = `
 /* ── 判定カード ── */
 .judge-row{display:flex; gap:12px; margin-top:14px; align-items:stretch}
 .judge{
-  position:relative; width:86px; height:86px; flex:none; border-radius:16px;
-  display:grid; place-items:center; border:3px solid #38495D; background:var(--night-2);
+  position:relative; width:86px; height:86px; flex:none; border-radius:18px;
+  display:grid; place-items:center; border:3px solid var(--line); background:var(--paper);
 }
-.judge-name{font-size:30px; font-weight:800}
-.judge.is-empty .judge-name{color:#4E617A}
-.judge.is-ok{border-color:var(--mint); color:var(--mint); animation:okPop .4s cubic-bezier(.2,1.6,.4,1)}
+.judge-name{font-size:30px; font-weight:800; color:var(--ink)}
+.judge.is-empty .judge-name{color:#CDBFA9}
+.judge.is-ok{border-color:var(--mint); animation:okPop .4s cubic-bezier(.2,1.6,.4,1)}
+.judge.is-ok .judge-name{color:var(--mint)}
 @keyframes okPop{from{transform:scale(.7)} to{transform:scale(1)}}
-.judge.is-ng{border-color:var(--stripe); color:#8FA3B8; animation:ngShake .4s ease}
+.judge.is-ng{border-color:var(--red); animation:ngShake .4s ease}
+.judge.is-ng .judge-name{color:#B0A18E}
 @keyframes ngShake{0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)}}
 .judge-cross{position:absolute; inset:0; width:100%; height:100%}
-.judge-cross line{stroke:var(--stripe); stroke-width:11; stroke-linecap:round;
+.judge-cross line{stroke:var(--red); stroke-width:11; stroke-linecap:round;
   stroke-dasharray:96; stroke-dashoffset:96; animation:draw .22s ease forwards}
 .judge-cross line:last-child{animation-delay:.14s}
 @keyframes draw{to{stroke-dashoffset:0}}
 .heard{
-  flex:1; padding:12px 14px; border-radius:12px;
-  background:var(--night-2); border:2px dashed #38495D;
+  flex:1; padding:12px 14px; border-radius:14px;
+  background:var(--paper); border:2px dashed var(--line);
   display:flex; flex-direction:column; justify-content:center; gap:6px; min-width:0;
 }
-.heard-label{font-size:11px; letter-spacing:.16em; color:#7D8FA3; font-weight:800}
+.heard-label{font-size:11px; letter-spacing:.14em; color:var(--sub); font-weight:800}
 .heard-text{font-size:18px; font-weight:800; color:var(--mint); word-break:break-all}
 
 /* ── 操作 ── */
-.notice{margin:10px 2px 14px; font-size:15px; font-weight:800; color:#B9C8D8}
-.notice.is-ng{color:var(--stripe)}
+.notice{margin:10px 2px 14px; font-size:15px; font-weight:800; color:var(--sub)}
+.notice.is-ng{color:var(--red)}
 .controls{display:flex; gap:10px; flex-wrap:wrap}
 .mic{
   flex:1 1 180px; padding:15px 18px; border:none; border-radius:999px; cursor:pointer;
   background:var(--amber); color:var(--ink); font-size:16px; font-weight:800;
+  box-shadow:0 3px 0 #DCA71F;
   display:flex; align-items:center; justify-content:center; gap:10px;
-  transition:transform .12s ease;
+  transition:transform .12s ease, box-shadow .12s ease;
 }
-.mic:hover{transform:translateY(-2px)}
-.mic:disabled{opacity:.45; cursor:not-allowed; transform:none}
-.mic.is-live{background:var(--mint)}
-.mic-dot{width:11px; height:11px; border-radius:50%; background:var(--ink); opacity:.35}
-.mic.is-live .mic-dot{opacity:1; background:#8A1F1A; animation:blink 1s ease-in-out infinite}
-@keyframes blink{50%{opacity:.25}}
+.mic:hover{transform:translateY(-2px); box-shadow:0 5px 0 #DCA71F}
+.mic:active{transform:translateY(2px); box-shadow:0 1px 0 #DCA71F}
+.mic:disabled{opacity:.5; cursor:not-allowed; transform:none}
+.mic.is-live{background:var(--mint); color:#FFFFFF; box-shadow:0 3px 0 #23917F}
+.mic-dot{width:11px; height:11px; border-radius:50%; background:var(--ink); opacity:.3}
+.mic.is-live .mic-dot{opacity:1; background:#FFFFFF; animation:blink 1s ease-in-out infinite}
+@keyframes blink{50%{opacity:.3}}
 .ghost{
-  padding:15px 20px; border-radius:999px; cursor:pointer; background:transparent;
-  border:2px solid #38495D; color:#A8BACD; font-size:15px; font-weight:800;
+  padding:15px 20px; border-radius:999px; cursor:pointer; background:var(--paper);
+  border:2px solid var(--line); color:var(--sub); font-size:15px; font-weight:800;
 }
-.ghost:hover{border-color:var(--mint); color:var(--mint)}
-.fallback-note{margin:12px 2px 0; font-size:13px; color:var(--lane); line-height:1.7}
+.ghost:hover{border-color:var(--orange); color:var(--orange)}
+.fallback-note{margin:12px 2px 0; font-size:13px; color:var(--red); line-height:1.7}
 
 @media (max-width:420px){
-  .hero-title{font-size:38px}
   .lane{height:280px}
   .pin-svg{width:36px; height:92px}
   .pin{width:36px}
