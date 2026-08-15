@@ -3,29 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>おんかいボウリング</title>
+<title>ドレミあそび</title>
 <style>
   html,body{margin:0;padding:0;background:#141C26;min-height:100%}
   #root{min-height:100vh}
-  #err{
-    display:none; position:fixed; left:0; right:0; bottom:0; z-index:9999;
+  #err{display:none; position:fixed; left:0; right:0; bottom:0; z-index:9999;
     background:#8A1F1A; color:#fff; padding:14px 16px; font:13px/1.6 -apple-system,sans-serif;
-    white-space:pre-wrap; max-height:45vh; overflow:auto;
-  }
+    white-space:pre-wrap; max-height:45vh; overflow:auto;}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <pre id="err"></pre>
 <script>
-  // iPhoneでもエラーが画面で見えるようにする
   function showErr(msg){
     var e = document.getElementById('err');
-    e.style.display = 'block';
-    e.textContent += msg + '\n';
+    e.style.display='block'; e.textContent += msg + '\n';
   }
   window.addEventListener('error', function(ev){
-    showErr('ERROR: ' + (ev.message || '') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || ''));
+    showErr('ERROR: ' + (ev.message||'') + ' @ ' + (ev.filename||'') + ':' + (ev.lineno||''));
   });
   window.addEventListener('unhandledrejection', function(ev){
     showErr('PROMISE: ' + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason));
@@ -37,15 +33,13 @@
 <script>
 (function(){
   if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
-    showErr('React が読み込めていません。通信状況を確認してください。');
-    return;
+    showErr('React が読み込めていません。通信状況を確認してください。'); return;
   }
-  var useState = React.useState, useRef = React.useRef,
-      useEffect = React.useEffect, useCallback = React.useCallback;
+  var useState=React.useState, useRef=React.useRef, useEffect=React.useEffect, useCallback=React.useCallback;
   try {
-/* ─────────────────────────────────────────────
-   音階データ  ド レ ミ ファ ソ ラ シ ド レ
-   ───────────────────────────────────────────── */
+/* ═════════════════════════════════════════════
+   音階データ（ド〜高いド、2オクターブ分）
+   ═════════════════════════════════════════════ */
 const SCALE = [{
   ja: "ド",
   note: "C4"
@@ -79,14 +73,37 @@ const SCALE = [{
 }, {
   ja: "ファ",
   note: "F5"
+}, {
+  ja: "ソ",
+  note: "G5"
+}, {
+  ja: "ラ",
+  note: "A5"
+}, {
+  ja: "シ",
+  note: "B5"
+}, {
+  ja: "ド",
+  note: "C6"
 }];
-const STARTS = [0, 1, 2, 3, 4, 5, 6]; // ド〜シ から開始
-const PIN_COUNT = 5;
 
-/* ─────────────────────────────────────────────
+/** 上行: startから length 個 */
+const upFrom = (start, length) => Array.from({
+  length
+}, (_, i) => SCALE[start + i]);
+/** 下行: startから length 個 */
+const downFrom = (start, length) => Array.from({
+  length
+}, (_, i) => SCALE[start - i]);
+const randIn = (min, max, exclude = -1) => {
+  let n = exclude;
+  while (n === exclude) n = min + Math.floor(Math.random() * (max - min + 1));
+  return n;
+};
+
+/* ═════════════════════════════════════════════
    音声認識テキストの正規化
-   STT は「ド」を「度」、「シ」を「四」等に誤変換しがち
-   ───────────────────────────────────────────── */
+   ═════════════════════════════════════════════ */
 const HOMOPHONE = {
   度: "ド",
   土: "ド",
@@ -113,11 +130,7 @@ const HOMOPHONE = {
   譜: "ファ"
 };
 const SINGLE = new Set(["ド", "レ", "ミ", "ソ", "ラ", "シ"]);
-function toKatakana(s) {
-  return s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
-}
-
-/** 認識テキストから音名の並びを取り出す（「ドレミファソ」も1回で拾える） */
+const toKatakana = s => s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
 function parseNotes(raw) {
   const s = toKatakana(raw).replace(/[\sー・、。,.!?！？]/g, "");
   const out = [];
@@ -145,267 +158,83 @@ function parseNotes(raw) {
   return out;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const randomStart = (exclude = -1) => {
-  let n = exclude;
-  while (n === exclude) n = STARTS[Math.floor(Math.random() * STARTS.length)];
-  return n;
+
+/* ═════════════════════════════════════════════
+   音（Tone.js）
+   ═════════════════════════════════════════════ */
+const audio = {
+  synth: null,
+  clack: null,
+  buzz: null
+};
+async function initAudio() {
+  if (audio.synth) return;
+  await Tone.start();
+  audio.synth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: {
+      type: "triangle"
+    },
+    envelope: {
+      attack: 0.005,
+      decay: 0.35,
+      sustain: 0.25,
+      release: 1.1
+    }
+  }).toDestination();
+  audio.synth.volume.value = -6;
+  audio.clack = new Tone.NoiseSynth({
+    noise: {
+      type: "white"
+    },
+    envelope: {
+      attack: 0.001,
+      decay: 0.09,
+      sustain: 0
+    }
+  }).toDestination();
+  audio.clack.volume.value = -20;
+  audio.buzz = new Tone.Synth({
+    oscillator: {
+      type: "sawtooth"
+    },
+    envelope: {
+      attack: 0.01,
+      decay: 0.18,
+      sustain: 0
+    }
+  }).toDestination();
+  audio.buzz.volume.value = -16;
+}
+const playNote = (n, withClack) => {
+  try {
+    audio.synth?.triggerAttackRelease(n, "8n");
+    if (withClack) audio.clack?.triggerAttackRelease("16n");
+  } catch (e) {}
+};
+const playBuzz = () => {
+  try {
+    audio.buzz?.triggerAttackRelease("A2", "16n");
+  } catch (e) {}
 };
 
-/* ─────────────────────────────────────────────
-   ピン
-   ───────────────────────────────────────────── */
-function Pin({
-  label,
-  state,
-  index,
-  revealed
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    className: `pin pin--${state}`,
-    style: {
-      "--i": index
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "pin-inner"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: `pin-label ${revealed ? "" : "is-hidden"}`
-  }, revealed ? label : "?"), /*#__PURE__*/React.createElement("svg", {
-    viewBox: "0 0 40 100",
-    className: "pin-svg",
-    "aria-hidden": "true"
-  }, /*#__PURE__*/React.createElement("path", {
-    d: "M20 3C26 3 28.5 9 28.5 14.5c0 5-4.5 9-4.5 13.5 0 5 8.5 12 8.5 28.5C32.5 74 27.5 88.5 20 97 12.5 88.5 7.5 74 7.5 56.5 7.5 40 16 33 16 28c0-4.5-4.5-8.5-4.5-13.5C11.5 9 14 3 20 3Z",
-    className: "pin-body"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: "M13.5 34h13v5.5h-13zM12 42h16v5.5H12z",
-    className: "pin-stripe"
-  }))));
-}
-
-/* ─────────────────────────────────────────────
-   あたり！バッジ（ワークシートの太陽マーク）
-   ───────────────────────────────────────────── */
-function AtariBadge({
-  points
-}) {
-  const rays = Array.from({
-    length: 16
-  }, (_, i) => i);
-  return /*#__PURE__*/React.createElement("div", {
-    className: "atari",
-    role: "status"
-  }, /*#__PURE__*/React.createElement("svg", {
-    viewBox: "0 0 200 200",
-    className: "atari-sun",
-    "aria-hidden": "true"
-  }, rays.map(i => {
-    const a = i / rays.length * Math.PI * 2;
-    const x = 100 + Math.cos(a) * 78;
-    const y = 100 + Math.sin(a) * 78;
-    return /*#__PURE__*/React.createElement("circle", {
-      key: i,
-      cx: x,
-      cy: y,
-      r: 6,
-      className: "atari-dot"
-    });
-  }), /*#__PURE__*/React.createElement("circle", {
-    cx: "100",
-    cy: "100",
-    r: "66",
-    className: "atari-core"
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "atari-text"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "atari-word"
-  }, "あたり！"), /*#__PURE__*/React.createElement("span", {
-    className: "atari-score"
-  }, points, "てん")));
-}
-
-/* ─────────────────────────────────────────────
-   本体
-   ───────────────────────────────────────────── */
-function OnkaiBowling() {
-  const [startIdx, setStartIdx] = useState(() => randomStart());
-  const [cleared, setCleared] = useState(0); // 倒れた本数
-  const [ballAt, setBallAt] = useState(null); // 転がる先のピン番号
-  const [miss, setMiss] = useState(false);
-  const [done, setDone] = useState(false);
-  const [score, setScore] = useState(0);
+/* ═════════════════════════════════════════════
+   音声認識フック
+   ═════════════════════════════════════════════ */
+function useSpeech(onNotes) {
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState("");
-  const [notice, setNotice] = useState("スタートの音をえらんで、マイクをタップ");
-  const [srSupported, setSrSupported] = useState(true);
-  const [penalty, setPenalty] = useState(0);
-  const [lastPoints, setLastPoints] = useState(null);
-  const [judge, setJudge] = useState(null); // {name, ok, id}
-  const judgeIdRef = useRef(0);
-  const target = SCALE.slice(startIdx, startIdx + PIN_COUNT);
-  const startRef = useRef(startIdx);
-  const idxRef = useRef(0);
-  const doneRef = useRef(false);
-  const queueRef = useRef([]);
-  const runningRef = useRef(false);
-  const penaltyRef = useRef(0);
+  const [supported, setSupported] = useState(true);
+  const [hint, setHint] = useState("");
   const recogRef = useRef(null);
-  const wantListenRef = useRef(false);
-  const synthRef = useRef(null);
-  const clackRef = useRef(null);
-  const buzzRef = useRef(null);
+  const wantRef = useRef(false);
+  const cbRef = useRef(onNotes);
   useEffect(() => {
-    startRef.current = startIdx;
-  }, [startIdx]);
-
-  /* フォント */
-  useEffect(() => {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap";
-    document.head.appendChild(link);
-    return () => {
-      try {
-        document.head.removeChild(link);
-      } catch (e) {}
-    };
-  }, []);
-
-  /* ── 音まわり ───────────────────────────── */
-  const initAudio = useCallback(async () => {
-    if (synthRef.current) return;
-    await Tone.start();
-    synthRef.current = new Tone.PolySynth(Tone.Synth, {
-      oscillator: {
-        type: "triangle"
-      },
-      envelope: {
-        attack: 0.005,
-        decay: 0.35,
-        sustain: 0.25,
-        release: 1.1
-      }
-    }).toDestination();
-    synthRef.current.volume.value = -6;
-    clackRef.current = new Tone.NoiseSynth({
-      noise: {
-        type: "white"
-      },
-      envelope: {
-        attack: 0.001,
-        decay: 0.09,
-        sustain: 0
-      }
-    }).toDestination();
-    clackRef.current.volume.value = -20;
-    buzzRef.current = new Tone.Synth({
-      oscillator: {
-        type: "sawtooth"
-      },
-      envelope: {
-        attack: 0.01,
-        decay: 0.18,
-        sustain: 0
-      }
-    }).toDestination();
-    buzzRef.current.volume.value = -16;
-  }, []);
-  const playNote = useCallback(note => {
-    try {
-      synthRef.current?.triggerAttackRelease(note, "8n");
-      clackRef.current?.triggerAttackRelease("16n");
-    } catch (e) {}
-  }, []);
-  const playBuzz = useCallback(() => {
-    try {
-      buzzRef.current?.triggerAttackRelease("A2", "16n");
-    } catch (e) {}
-  }, []);
-
-  /* ── ゲーム進行 ─────────────────────────── */
-  const reset = useCallback(() => {
-    queueRef.current = [];
-    idxRef.current = 0;
-    doneRef.current = false;
-    penaltyRef.current = 0;
-    setPenalty(0);
-    setLastPoints(null);
-    setJudge(null);
-    setCleared(0);
-    setDone(false);
-    setBallAt(null);
-    setMiss(false);
-    setHeard("");
-    setNotice("さいしょの おとから じゅんばんに！");
-  }, []);
-  const handleNote = useCallback(async name => {
-    if (doneRef.current) return;
-    const seq = SCALE.slice(startRef.current, startRef.current + PIN_COUNT);
-    const i = idxRef.current;
-    if (i >= PIN_COUNT) return;
-    if (name === seq[i].ja) {
-      judgeIdRef.current += 1;
-      setJudge({
-        name,
-        ok: true,
-        id: judgeIdRef.current
-      });
-      setNotice("せいかい！");
-      setBallAt(i);
-      await sleep(300);
-      idxRef.current = i + 1;
-      setCleared(i + 1);
-      playNote(seq[i].note);
-      await sleep(240);
-      setBallAt(null);
-      if (i + 1 === PIN_COUNT) {
-        doneRef.current = true;
-        const points = Math.max(20, 100 - penaltyRef.current);
-        setLastPoints(points);
-        setDone(true);
-        setScore(s => s + points);
-        setNotice("ぜんぶ たおれた！");
-        for (let k = 0; k < PIN_COUNT; k++) {
-          playNote(seq[k].note);
-          await sleep(150);
-        }
-      }
-      await sleep(120);
-    } else {
-      judgeIdRef.current += 1;
-      setJudge({
-        name,
-        ok: false,
-        id: judgeIdRef.current
-      });
-      penaltyRef.current += 10;
-      setPenalty(penaltyRef.current);
-      setMiss(true);
-      playBuzz();
-      setNotice("ざんねん");
-      await sleep(900);
-      setMiss(false);
-    }
-  }, [playNote, playBuzz]);
-  const drain = useCallback(async () => {
-    if (runningRef.current) return;
-    runningRef.current = true;
-    while (queueRef.current.length) {
-      const n = queueRef.current.shift();
-      await handleNote(n);
-    }
-    runningRef.current = false;
-  }, [handleNote]);
-  const enqueue = useCallback(names => {
-    if (!names.length) return;
-    queueRef.current.push(...names);
-    drain();
-  }, [drain]);
-
-  /* ── 音声認識 ───────────────────────────── */
+    cbRef.current = onNotes;
+  }, [onNotes]);
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-      setSrSupported(false);
+      setSupported(false);
       return;
     }
     const r = new SR();
@@ -419,132 +248,212 @@ function OnkaiBowling() {
         const text = res[0].transcript;
         if (res.isFinal) {
           setHeard(text);
-          enqueue(parseNotes(text));
-        } else {
-          interim += text;
-        }
+          cbRef.current(parseNotes(text));
+        } else interim += text;
       }
       if (interim) setHeard(interim);
     };
     r.onerror = ev => {
       if (ev.error === "not-allowed") {
-        wantListenRef.current = false;
+        wantRef.current = false;
         setListening(false);
-        setNotice("マイクの きょかが ひつようです");
+        setHint("マイクの きょかが ひつようです");
       }
     };
     r.onend = () => {
-      if (wantListenRef.current) {
-        // iOS Safari は1発話ごとに停止する。再開できない場合はタップを促す
+      if (wantRef.current) {
         try {
           r.start();
         } catch (e) {
-          wantListenRef.current = false;
+          wantRef.current = false;
           setListening(false);
-          setNotice("もういちど マイクを タップしてね");
+          setHint("もういちど マイクを タップしてね");
         }
-      } else {
-        setListening(false);
-      }
+      } else setListening(false);
     };
     recogRef.current = r;
     return () => {
-      wantListenRef.current = false;
+      wantRef.current = false;
       try {
         r.stop();
       } catch (e) {}
     };
-  }, [enqueue]);
-  const toggleMic = useCallback(async () => {
+  }, []);
+  const toggle = useCallback(async () => {
     await initAudio();
     const r = recogRef.current;
     if (!r) return;
-    if (listening) {
-      wantListenRef.current = false;
+    if (wantRef.current) {
+      wantRef.current = false;
       try {
         r.stop();
       } catch (e) {}
       setListening(false);
-      setNotice("マイクを とめました");
     } else {
-      wantListenRef.current = true;
+      wantRef.current = true;
       try {
         r.start();
       } catch (e) {}
       setListening(true);
       setHeard("");
-      setNotice("こえで いってみよう");
+      setHint("");
     }
-  }, [listening, initAudio]);
-  const nextQuestion = useCallback(() => {
-    setStartIdx(cur => randomStart(cur));
-    reset();
-  }, [reset]);
-  const pinX = i => 32 + i * 9; // レーン上の横位置(%)
+  }, []);
+  const stop = useCallback(() => {
+    wantRef.current = false;
+    try {
+      recogRef.current?.stop();
+    } catch (e) {}
+    setListening(false);
+  }, []);
+  return {
+    listening,
+    heard,
+    supported,
+    hint,
+    toggle,
+    stop
+  };
+}
 
-  return /*#__PURE__*/React.createElement("div", {
-    className: "app"
-  }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement("header", {
-    className: "board"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "board-left"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "board-eyebrow"
-  }, "もんだい"), /*#__PURE__*/React.createElement("h1", {
-    className: "board-title"
-  }, target.map((t, i) => /*#__PURE__*/React.createElement("span", {
-    key: i,
-    className: `slot ${i < cleared ? "is-open" : ""} ${i === 0 ? "is-given" : ""}`
-  }, i === 0 || i < cleared ? t.ja : "?")))), /*#__PURE__*/React.createElement("div", {
-    className: "board-score"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "board-score-label"
-  }, "とくてん"), /*#__PURE__*/React.createElement("span", {
-    className: "board-score-num"
-  }, String(score).padStart(3, "0")), !done && penalty > 0 && /*#__PURE__*/React.createElement("span", {
-    className: "board-penalty"
-  }, "このもんだい −", penalty))), /*#__PURE__*/React.createElement("main", {
-    className: `lane-wrap ${miss ? "is-miss" : ""}`
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "lane"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "lane-boards"
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "lane-arrows"
-  }, [0, 1, 2].map(i => /*#__PURE__*/React.createElement("span", {
-    key: i,
-    className: "arrow"
-  }))), /*#__PURE__*/React.createElement("div", {
-    className: "pins"
-  }, target.map((t, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    className: "pin-slot",
-    style: {
-      left: `${pinX(i)}%`
+/* ═════════════════════════════════════════════
+   ゲーム進行フック（順番に音名を当てる共通ロジック）
+   ═════════════════════════════════════════════ */
+function useNoteGame(sequence, {
+  onClear,
+  stepMs = 380
+} = {}) {
+  const [idx, setIdx] = useState(0);
+  const [judge, setJudge] = useState(null);
+  const [notice, setNotice] = useState("さいしょの おとから じゅんばんに！");
+  const [done, setDone] = useState(false);
+  const [misses, setMisses] = useState(0);
+  const seqRef = useRef(sequence);
+  const idxRef = useRef(0);
+  const doneRef = useRef(false);
+  const missRef = useRef(0);
+  const queueRef = useRef([]);
+  const runningRef = useRef(false);
+  const judgeIdRef = useRef(0);
+  const clearCbRef = useRef(onClear);
+  useEffect(() => {
+    clearCbRef.current = onClear;
+  }, [onClear]);
+  const reset = useCallback(nextSeq => {
+    if (nextSeq) seqRef.current = nextSeq;
+    queueRef.current = [];
+    idxRef.current = 0;
+    doneRef.current = false;
+    missRef.current = 0;
+    setIdx(0);
+    setJudge(null);
+    setDone(false);
+    setMisses(0);
+    setNotice("さいしょの おとから じゅんばんに！");
+  }, []);
+  useEffect(() => {
+    seqRef.current = sequence;
+  }, [sequence]);
+  const handle = useCallback(async name => {
+    if (doneRef.current) return;
+    const seq = seqRef.current;
+    const i = idxRef.current;
+    if (i >= seq.length) return;
+    judgeIdRef.current += 1;
+    if (name === seq[i].ja) {
+      setJudge({
+        name,
+        ok: true,
+        id: judgeIdRef.current
+      });
+      setNotice("せいかい！");
+      idxRef.current = i + 1;
+      setIdx(i + 1);
+      playNote(seq[i].note, true);
+      await sleep(stepMs);
+      if (i + 1 === seq.length) {
+        doneRef.current = true;
+        setDone(true);
+        const points = Math.max(20, 100 - missRef.current * 10);
+        setNotice("ぜんぶ できた！");
+        clearCbRef.current?.(points);
+        for (const s of seq) {
+          playNote(s.note, false);
+          await sleep(140);
+        }
+      }
+    } else {
+      missRef.current += 1;
+      setMisses(missRef.current);
+      setJudge({
+        name,
+        ok: false,
+        id: judgeIdRef.current
+      });
+      playBuzz();
+      setNotice("ざんねん");
+      await sleep(800);
     }
-  }, /*#__PURE__*/React.createElement(Pin, {
-    label: t.ja,
-    index: i,
-    revealed: i === 0 || i < cleared,
-    state: i < cleared ? "down" : ballAt === i ? "hit" : "up"
-  })))), /*#__PURE__*/React.createElement("div", {
-    className: `ball ${ballAt !== null ? "is-rolling" : ""}`,
-    style: ballAt !== null ? {
-      left: `${pinX(ballAt)}%`
-    } : undefined
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "ball-hole"
-  }), /*#__PURE__*/React.createElement("span", {
-    className: "ball-hole"
-  }), /*#__PURE__*/React.createElement("span", {
-    className: "ball-hole"
-  }))), done && /*#__PURE__*/React.createElement(AtariBadge, {
-    points: lastPoints ?? 100
-  })), /*#__PURE__*/React.createElement("div", {
+  }, [stepMs]);
+  const feed = useCallback(names => {
+    if (!names.length) return;
+    queueRef.current.push(...names);
+    (async () => {
+      if (runningRef.current) return;
+      runningRef.current = true;
+      while (queueRef.current.length) await handle(queueRef.current.shift());
+      runningRef.current = false;
+    })();
+  }, [handle]);
+  return {
+    idx,
+    judge,
+    notice,
+    done,
+    misses,
+    feed,
+    reset
+  };
+}
+
+/* ═════════════════════════════════════════════
+   共通UI
+   ═════════════════════════════════════════════ */
+function TopBar({
+  title,
+  score,
+  onBack
+}) {
+  return /*#__PURE__*/React.createElement("header", {
+    className: "topbar"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "back",
+    onClick: onBack,
+    "aria-label": "もどる"
+  }, "‹"), /*#__PURE__*/React.createElement("span", {
+    className: "topbar-title"
+  }, title), /*#__PURE__*/React.createElement("span", {
+    className: "topbar-score"
+  }, String(score).padStart(3, "0")));
+}
+function Progress({
+  sequence,
+  idx
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "prog"
+  }, sequence.map((s, i) => /*#__PURE__*/React.createElement("span", {
+    key: i,
+    className: `slot ${i < idx ? "is-open" : ""} ${i === 0 ? "is-given" : ""}`
+  }, i === 0 || i < idx ? s.ja : "?")));
+}
+function JudgeCard({
+  judge,
+  heard
+}) {
+  return /*#__PURE__*/React.createElement("div", {
     className: "judge-row",
     "aria-live": "polite"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "judge-slot"
   }, judge ? /*#__PURE__*/React.createElement("div", {
     key: judge.id,
     className: `judge ${judge.ok ? "is-ok" : "is-ng"}`
@@ -568,34 +477,499 @@ function OnkaiBowling() {
     className: "judge is-empty"
   }, /*#__PURE__*/React.createElement("span", {
     className: "judge-name"
-  }, "—"))), /*#__PURE__*/React.createElement("div", {
+  }, "—")), /*#__PURE__*/React.createElement("div", {
     className: "heard"
   }, /*#__PURE__*/React.createElement("span", {
     className: "heard-label"
   }, "きこえたことば"), /*#__PURE__*/React.createElement("span", {
     className: "heard-text"
-  }, heard || "—"))), /*#__PURE__*/React.createElement("p", {
+  }, heard || "—")));
+}
+function PlayBar({
+  speech,
+  notice,
+  judge,
+  onNext
+}) {
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
     className: `notice ${judge && !judge.ok ? "is-ng" : ""}`,
     "aria-live": "polite"
-  }, notice), /*#__PURE__*/React.createElement("div", {
+  }, speech.hint || notice), /*#__PURE__*/React.createElement("div", {
     className: "controls"
   }, /*#__PURE__*/React.createElement("button", {
-    className: `mic ${listening ? "is-live" : ""}`,
-    onClick: toggleMic,
-    disabled: !srSupported
+    className: `mic ${speech.listening ? "is-live" : ""}`,
+    onClick: speech.toggle,
+    disabled: !speech.supported
   }, /*#__PURE__*/React.createElement("span", {
     className: "mic-dot"
-  }), listening ? "きいています" : "マイクを つかう"), /*#__PURE__*/React.createElement("button", {
+  }), speech.listening ? "きいています" : "マイクを つかう"), /*#__PURE__*/React.createElement("button", {
     className: "ghost",
-    onClick: nextQuestion
-  }, "つぎのもんだい")), !srSupported && /*#__PURE__*/React.createElement("p", {
+    onClick: onNext
+  }, "つぎのもんだい")), !speech.supported && /*#__PURE__*/React.createElement("p", {
     className: "fallback-note"
-  }, "このブラウザは音声にんしきに たいおうしていません。Chrome か Edge、 または iPhone は Safari でひらいてください。"));
+  }, "このブラウザは音声にんしきに たいおうしていません。 iPhone は Safari、パソコンは Chrome でひらいてください。"));
+}
+function Cleared({
+  points
+}) {
+  const rays = Array.from({
+    length: 16
+  }, (_, i) => i);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "atari",
+    role: "status"
+  }, /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 200 200",
+    className: "atari-sun",
+    "aria-hidden": "true"
+  }, rays.map(i => {
+    const a = i / rays.length * Math.PI * 2;
+    return /*#__PURE__*/React.createElement("circle", {
+      key: i,
+      cx: 100 + Math.cos(a) * 78,
+      cy: 100 + Math.sin(a) * 78,
+      r: 6,
+      className: "atari-dot"
+    });
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "100",
+    cy: "100",
+    r: "66",
+    className: "atari-core"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "atari-text"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "atari-word"
+  }, "あたり！"), /*#__PURE__*/React.createElement("span", {
+    className: "atari-score"
+  }, points, "てん")));
 }
 
-/* ─────────────────────────────────────────────
+/* ═════════════════════════════════════════════
+   ゲーム1: ボウリング（5音・上行）
+   ═════════════════════════════════════════════ */
+function Pin({
+  label,
+  state,
+  revealed
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: `pin pin--${state}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "pin-inner"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: `pin-label ${revealed ? "" : "is-hidden"}`
+  }, revealed ? label : "?"), /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 40 100",
+    className: "pin-svg",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M20 3C26 3 28.5 9 28.5 14.5c0 5-4.5 9-4.5 13.5 0 5 8.5 12 8.5 28.5C32.5 74 27.5 88.5 20 97 12.5 88.5 7.5 74 7.5 56.5 7.5 40 16 33 16 28c0-4.5-4.5-8.5-4.5-13.5C11.5 9 14 3 20 3Z",
+    className: "pin-body"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M13.5 34h13v5.5h-13zM12 42h16v5.5H12z",
+    className: "pin-stripe"
+  }))));
+}
+function BowlingGame({
+  score,
+  addScore,
+  onBack
+}) {
+  const [start, setStart] = useState(() => randIn(0, 6));
+  const [points, setPoints] = useState(0);
+  const seq = upFrom(start, 5);
+  const game = useNoteGame(seq, {
+    onClear: p => {
+      setPoints(p);
+      addScore(p);
+    }
+  });
+  const speech = useSpeech(game.feed);
+  const [rolling, setRolling] = useState(null);
+  useEffect(() => {
+    if (game.judge?.ok) {
+      setRolling(game.idx - 1);
+      const t = setTimeout(() => setRolling(null), 340);
+      return () => clearTimeout(t);
+    }
+  }, [game.judge, game.idx]);
+  const next = () => {
+    const n = randIn(0, 6, start);
+    setStart(n);
+    game.reset(upFrom(n, 5));
+  };
+  const pinX = i => 32 + i * 9;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "screen"
+  }, /*#__PURE__*/React.createElement(TopBar, {
+    title: "ボウリング",
+    score: score,
+    onBack: onBack
+  }), /*#__PURE__*/React.createElement(Progress, {
+    sequence: seq,
+    idx: game.idx
+  }), /*#__PURE__*/React.createElement("div", {
+    className: `stage ${game.judge && !game.judge.ok ? "is-miss" : ""}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "lane"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "lane-boards"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "pins"
+  }, seq.map((s, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    className: "pin-slot",
+    style: {
+      left: `${pinX(i)}%`
+    }
+  }, /*#__PURE__*/React.createElement(Pin, {
+    label: s.ja,
+    revealed: i === 0 || i < game.idx,
+    state: i < game.idx ? "down" : rolling === i ? "hit" : "up"
+  })))), /*#__PURE__*/React.createElement("div", {
+    className: `ball ${rolling !== null ? "is-rolling" : ""}`,
+    style: rolling !== null ? {
+      left: `${pinX(rolling)}%`
+    } : undefined
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ball-hole"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "ball-hole"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "ball-hole"
+  }))), game.done && /*#__PURE__*/React.createElement(Cleared, {
+    points: points
+  })), /*#__PURE__*/React.createElement(JudgeCard, {
+    judge: game.judge,
+    heard: speech.heard
+  }), /*#__PURE__*/React.createElement(PlayBar, {
+    speech: speech,
+    notice: game.notice,
+    judge: game.judge,
+    onNext: next
+  }));
+}
+
+/* ═════════════════════════════════════════════
+   ゲーム2/3: かんらんしゃ（7音・上行 / 下行）
+   ═════════════════════════════════════════════ */
+const GONDOLA_COLORS = ["#F4B3C9",
+// ピンク
+"#8FCBE0",
+// みずいろ
+"#A8CE5C",
+// きみどり
+"#F5928E",
+// コーラル
+"#F5CE3E",
+// きいろ
+"#A79BD8",
+// むらさき
+"#F0983C" // オレンジ
+];
+function Gondola({
+  x,
+  y,
+  label,
+  open,
+  color
+}) {
+  const r = 9.6;
+  const gap = r * 0.46;
+  const arms = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  return /*#__PURE__*/React.createElement("g", {
+    className: `gon ${open ? "is-open" : ""}`
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: x,
+    cy: y,
+    r: r,
+    fill: open ? color : "#DDE3EA",
+    className: "gon-body"
+  }), arms.map(([dx, dy], k) => /*#__PURE__*/React.createElement("line", {
+    key: k,
+    x1: x + dx * gap,
+    y1: y + dy * gap,
+    x2: x + dx * r * 0.97,
+    y2: y + dy * r * 0.97,
+    className: "gon-arm"
+  })), /*#__PURE__*/React.createElement("text", {
+    x: x,
+    y: y,
+    className: "gon-text",
+    textAnchor: "middle",
+    dominantBaseline: "central"
+  }, open ? label : "?"));
+}
+function WheelGame({
+  dir,
+  score,
+  addScore,
+  onBack
+}) {
+  const up = dir === "up";
+  const makeSeq = s => up ? upFrom(s, 7) : downFrom(s, 7);
+  const [start, setStart] = useState(() => up ? randIn(0, 7) : randIn(6, 13));
+  const [points, setPoints] = useState(0);
+  const seq = makeSeq(start);
+  const game = useNoteGame(seq, {
+    onClear: p => {
+      setPoints(p);
+      addScore(p);
+    }
+  });
+  const speech = useSpeech(game.feed);
+  const next = () => {
+    const n = up ? randIn(0, 7, start) : randIn(6, 13, start);
+    setStart(n);
+    game.reset(makeSeq(n));
+  };
+  const R = 34;
+  const seat = i => {
+    const step = Math.PI * 2 / 7;
+    const a = -Math.PI / 2 + (up ? i * step : -i * step);
+    return {
+      x: 50 + Math.cos(a) * R,
+      y: 50 + Math.sin(a) * R
+    };
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "screen"
+  }, /*#__PURE__*/React.createElement(TopBar, {
+    title: up ? "かんらんしゃ" : "ぎゃくまわり かんらんしゃ",
+    score: score,
+    onBack: onBack
+  }), /*#__PURE__*/React.createElement(Progress, {
+    sequence: seq,
+    idx: game.idx
+  }), /*#__PURE__*/React.createElement("div", {
+    className: `stage ${game.judge && !game.judge.ok ? "is-miss" : ""}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "wheel-wrap"
+  }, /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 100 100",
+    className: "wheel"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "50",
+    cy: "50",
+    r: R,
+    className: "wheel-rim"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "50",
+    cy: "50",
+    r: "15",
+    className: "wheel-rim"
+  }), seq.map((_, i) => {
+    const p = seat(i);
+    return /*#__PURE__*/React.createElement("line", {
+      key: i,
+      x1: "50",
+      y1: "50",
+      x2: p.x,
+      y2: p.y,
+      className: "wheel-spoke"
+    });
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "50",
+    cy: "50",
+    r: "5.5",
+    className: "wheel-hub"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: up ? "M50 27.5 A22.5 22.5 0 0 1 69.5 38.8" : "M50 27.5 A22.5 22.5 0 0 0 30.5 38.8",
+    className: "wheel-arrow",
+    markerEnd: "url(#head)"
+  }), /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("marker", {
+    id: "head",
+    markerWidth: "5",
+    markerHeight: "5",
+    refX: "2",
+    refY: "2.5",
+    orient: "auto"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M0 0 L5 2.5 L0 5 z",
+    className: "wheel-arrowhead"
+  }))), seq.map((s, i) => {
+    const p = seat(i);
+    return /*#__PURE__*/React.createElement(Gondola, {
+      key: i,
+      x: p.x,
+      y: p.y,
+      label: s.ja,
+      open: i === 0 || i < game.idx,
+      color: GONDOLA_COLORS[i % GONDOLA_COLORS.length]
+    });
+  }))), game.done && /*#__PURE__*/React.createElement(Cleared, {
+    points: points
+  })), /*#__PURE__*/React.createElement(JudgeCard, {
+    judge: game.judge,
+    heard: speech.heard
+  }), /*#__PURE__*/React.createElement(PlayBar, {
+    speech: speech,
+    notice: game.notice,
+    judge: game.judge,
+    onNext: next
+  }));
+}
+
+/* ═════════════════════════════════════════════
+   トップ画面
+   ═════════════════════════════════════════════ */
+const GAMES = [{
+  id: "bowling",
+  name: "ボウリング",
+  desc: "5ほんの ピンを たおそう",
+  icon: "pin"
+}, {
+  id: "wheel-up",
+  name: "かんらんしゃ",
+  desc: "ぐるっと 1しゅう のぼろう",
+  icon: "wheel"
+}, {
+  id: "wheel-down",
+  name: "ぎゃくまわり かんらんしゃ",
+  desc: "はんたいに まわって くだろう",
+  icon: "wheel-r"
+}];
+function GameIcon({
+  kind
+}) {
+  if (kind === "pin") {
+    return /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 40 100",
+      className: "card-icon"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M20 3C26 3 28.5 9 28.5 14.5c0 5-4.5 9-4.5 13.5 0 5 8.5 12 8.5 28.5C32.5 74 27.5 88.5 20 97 12.5 88.5 7.5 74 7.5 56.5 7.5 40 16 33 16 28c0-4.5-4.5-8.5-4.5-13.5C11.5 9 14 3 20 3Z",
+      className: "pin-body"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M13.5 34h13v5.5h-13zM12 42h16v5.5H12z",
+      className: "pin-stripe"
+    }));
+  }
+  const flip = kind === "wheel-r";
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 100 100",
+    className: "card-icon"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "50",
+    cy: "50",
+    r: "34",
+    className: "ico-line"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "50",
+    cy: "50",
+    r: "14",
+    className: "ico-line"
+  }), [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const a = -Math.PI / 2 + i * Math.PI * 2 / 7;
+    return /*#__PURE__*/React.createElement("line", {
+      key: i,
+      x1: "50",
+      y1: "50",
+      x2: 50 + Math.cos(a) * 34,
+      y2: 50 + Math.sin(a) * 34,
+      className: "ico-line"
+    });
+  }), [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const a = -Math.PI / 2 + (flip ? -i : i) * Math.PI * 2 / 7;
+    return /*#__PURE__*/React.createElement("circle", {
+      key: `g${i}`,
+      cx: 50 + Math.cos(a) * 34,
+      cy: 50 + Math.sin(a) * 34,
+      r: "11",
+      fill: GONDOLA_COLORS[i]
+    });
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "50",
+    cy: "50",
+    r: "6",
+    fill: "#B6BFC8"
+  }));
+}
+function Home({
+  score,
+  onPick
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "screen home"
+  }, /*#__PURE__*/React.createElement("header", {
+    className: "hero"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "hero-eyebrow"
+  }, "こえで あそぶ おんかいゲーム"), /*#__PURE__*/React.createElement("h1", {
+    className: "hero-title"
+  }, "ドレミ", /*#__PURE__*/React.createElement("br", null), "あそび"), /*#__PURE__*/React.createElement("div", {
+    className: "hero-score"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "hero-score-label"
+  }, "これまでの とくてん"), /*#__PURE__*/React.createElement("span", {
+    className: "hero-score-num"
+  }, String(score).padStart(3, "0")))), /*#__PURE__*/React.createElement("div", {
+    className: "cards"
+  }, GAMES.map(g => /*#__PURE__*/React.createElement("button", {
+    key: g.id,
+    className: "card",
+    onClick: () => onPick(g.id)
+  }, /*#__PURE__*/React.createElement(GameIcon, {
+    kind: g.icon
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "card-text"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "card-name"
+  }, g.name), /*#__PURE__*/React.createElement("span", {
+    className: "card-desc"
+  }, g.desc)), /*#__PURE__*/React.createElement("span", {
+    className: "card-go"
+  }, "›")))), /*#__PURE__*/React.createElement("p", {
+    className: "home-note"
+  }, "マイクを つかいます。iPhone は Safari、パソコンは Chrome でひらいてね。"));
+}
+
+/* ═════════════════════════════════════════════
+   アプリ本体
+   ═════════════════════════════════════════════ */
+function App() {
+  const [screen, setScreen] = useState("home");
+  const [score, setScore] = useState(0);
+  const addScore = useCallback(p => setScore(s => s + p), []);
+  const back = useCallback(() => setScreen("home"), []);
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap";
+    document.head.appendChild(link);
+    return () => {
+      try {
+        document.head.removeChild(link);
+      } catch (e) {}
+    };
+  }, []);
+  const common = {
+    score,
+    addScore,
+    onBack: back
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "app"
+  }, /*#__PURE__*/React.createElement("style", null, CSS), screen === "home" && /*#__PURE__*/React.createElement(Home, {
+    score: score,
+    onPick: setScreen
+  }), screen === "bowling" && /*#__PURE__*/React.createElement(BowlingGame, {
+    key: "bowling",
+    ...common
+  }), screen === "wheel-up" && /*#__PURE__*/React.createElement(WheelGame, {
+    key: "wu",
+    dir: "up",
+    ...common
+  }), screen === "wheel-down" && /*#__PURE__*/React.createElement(WheelGame, {
+    key: "wd",
+    dir: "down",
+    ...common
+  }));
+}
+
+/* ═════════════════════════════════════════════
    スタイル
-   ───────────────────────────────────────────── */
+   ═════════════════════════════════════════════ */
 const CSS = `
 .app{
   --night:#141C26; --night-2:#1D2836;
@@ -604,52 +978,79 @@ const CSS = `
   --amber:#FFC145; --mint:#4FD1C5; --ink:#0E141C;
   font-family:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Yu Gothic",sans-serif;
   background:var(--night); color:var(--pin);
-  min-height:100%; padding:18px 16px 28px; box-sizing:border-box;
+  min-height:100%; padding:16px 16px 32px; box-sizing:border-box;
   max-width:720px; margin:0 auto;
 }
 .app *{box-sizing:border-box}
+.app button{font-family:inherit}
 .app button:focus-visible{outline:3px solid var(--mint); outline-offset:3px}
 
-/* スコアボード */
-.board{
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-  background:var(--night-2); border:2px solid #2E3D4F; border-radius:14px;
-  padding:12px 16px;
+/* ── トップ画面 ── */
+.hero{padding:18px 4px 26px}
+.hero-eyebrow{font-size:11px; letter-spacing:.22em; color:#7D8FA3; font-weight:800}
+.hero-title{
+  margin:8px 0 0; font-size:46px; line-height:1.05; font-weight:800;
+  letter-spacing:.02em; color:var(--pin);
 }
-.board-eyebrow{
-  display:block; font-size:11px; letter-spacing:.22em; color:#7D8FA3; font-weight:800;
+.hero-title::after{
+  content:""; display:block; width:64px; height:6px; margin-top:14px;
+  background:var(--amber); border-radius:3px;
 }
-.board-title{
-  margin:4px 0 0; font-size:26px; font-weight:800; letter-spacing:.14em; color:var(--pin);
+.hero-score{margin-top:18px}
+.hero-score-label{font-size:11px; letter-spacing:.18em; color:#7D8FA3; font-weight:800}
+.hero-score-num{
+  margin-left:10px; font-size:26px; font-weight:800; color:var(--amber);
+  text-shadow:0 0 14px rgba(255,193,69,.4);
 }
-.board-title{display:flex; gap:6px; letter-spacing:0}
+.cards{display:flex; flex-direction:column; gap:10px}
+.card{
+  display:flex; align-items:center; gap:14px; width:100%; text-align:left; cursor:pointer;
+  padding:14px 16px; border-radius:16px; background:var(--night-2);
+  border:2px solid #2E3D4F; color:var(--pin);
+  transition:transform .14s ease, border-color .14s ease;
+}
+.card:hover{transform:translateY(-2px); border-color:var(--amber)}
+.card-icon{width:38px; height:44px; flex:none}
+.ico-line{fill:none; stroke:#6E8299; stroke-width:3}
+.ico-accent{fill:none; stroke:var(--amber); stroke-width:5; stroke-linecap:round}
+.card-text{display:flex; flex-direction:column; gap:3px; flex:1}
+.card-name{font-size:18px; font-weight:800}
+.card-desc{font-size:12px; color:#8FA3B8}
+.card-go{font-size:26px; color:#5A6E86; line-height:1}
+.home-note{margin:22px 4px 0; font-size:12px; color:#7D8FA3; line-height:1.8}
+
+/* ── ゲーム共通 ── */
+.topbar{display:flex; align-items:center; gap:12px; padding:2px 0 14px}
+.back{
+  width:38px; height:38px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--night-2); border:2px solid #2E3D4F; color:var(--pin);
+  font-size:22px; line-height:1; padding-bottom:3px;
+}
+.topbar-title{flex:1; font-size:17px; font-weight:800; letter-spacing:.04em}
+.topbar-score{
+  font-size:22px; font-weight:800; color:var(--amber);
+  text-shadow:0 0 12px rgba(255,193,69,.4);
+}
+
+.prog{display:flex; gap:5px; flex-wrap:wrap; margin-bottom:12px}
 .slot{
-  min-width:38px; padding:2px 4px; border-radius:8px; text-align:center;
+  min-width:32px; padding:4px 5px; border-radius:8px; text-align:center;
+  font-size:15px; font-weight:800;
   background:#26374A; color:#6F8398; border:2px solid #35485E;
   transition:background .25s ease, color .25s ease, transform .25s ease;
 }
 .slot.is-given{background:transparent; color:var(--pin); border-color:#5A6E86; border-style:dashed}
 .slot.is-open{background:var(--amber); color:var(--ink); border-color:var(--amber); border-style:solid; transform:translateY(-2px)}
-.board-score{text-align:right; line-height:1}
-.board-penalty{display:block; margin-top:5px; font-size:11px; font-weight:800; color:#E2453C}
-.board-score-label{display:block; font-size:10px; letter-spacing:.2em; color:#7D8FA3; font-weight:800}
-.board-score-num{
-  font-size:32px; font-weight:800; color:var(--amber); letter-spacing:.06em;
-  text-shadow:0 0 14px rgba(255,193,69,.45);
-}
 
-
-/* レーン */
-.lane-wrap{position:relative; margin-top:14px}
-.lane-wrap.is-miss{animation:shake .4s ease}
+.stage{position:relative}
+.stage.is-miss{animation:shake .4s ease}
 @keyframes shake{
   0%,100%{transform:translateX(0)} 20%{transform:translateX(-9px)}
   40%{transform:translateX(8px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(4px)}
 }
-.lane{
-  position:relative; height:340px; border-radius:14px; overflow:hidden;
-  background:var(--gutter);
-}
+
+/* ── ボウリング ── */
+.lane{position:relative; height:320px; border-radius:14px; overflow:hidden; background:var(--gutter)}
 .lane-boards{
   position:absolute; inset:0;
   clip-path:polygon(36% 6%, 64% 6%, 100% 100%, 0% 100%);
@@ -657,110 +1058,98 @@ const CSS = `
     repeating-linear-gradient(90deg, rgba(0,0,0,.10) 0 1px, transparent 1px 26px),
     linear-gradient(180deg, var(--lane-2) 0%, var(--lane) 55%, #EFBD6E 100%);
 }
-.lane-arrows{
-  position:absolute; left:0; right:0; bottom:24%; display:flex;
-  justify-content:center; gap:38px; pointer-events:none;
-}
-.arrow{
-  width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent;
-  border-bottom:16px solid rgba(20,28,38,.28);
-}
 .pins{position:absolute; inset:0}
-.pin-slot{position:absolute; top:8%; transform:translateX(-50%)}
-
-.pin{width:44px; transform-origin:50% 100%}
-.pin-inner{
-  position:relative; transform-origin:50% 100%;
-  transition:transform .34s cubic-bezier(.3,1.4,.5,1), opacity .34s ease;
-}
-.pin-svg{display:block; width:44px; height:110px; filter:drop-shadow(0 6px 6px rgba(0,0,0,.28))}
+.pin-slot{position:absolute; top:7%; transform:translateX(-50%)}
+.pin{width:42px; transform-origin:50% 100%}
+.pin-inner{position:relative; transform-origin:50% 100%;
+  transition:transform .34s cubic-bezier(.3,1.4,.5,1), opacity .34s ease}
+.pin-svg{display:block; width:42px; height:105px; filter:drop-shadow(0 6px 6px rgba(0,0,0,.28))}
 .pin-body{fill:var(--pin)}
 .pin-stripe{fill:var(--stripe)}
 .pin-label{
-  position:absolute; top:-14px; left:50%; transform:translateX(-50%);
-  width:34px; height:34px; border-radius:50%;
+  position:absolute; top:-13px; left:50%; transform:translateX(-50%);
+  width:32px; height:32px; border-radius:50%;
   background:var(--pin); border:2.5px solid var(--ink); color:var(--ink);
-  font-size:15px; font-weight:800; display:grid; place-items:center; z-index:2;
+  font-size:14px; font-weight:800; display:grid; place-items:center; z-index:2;
 }
 .pin-label.is-hidden{background:#33475D; color:#9FB2C6; border-color:#0E141C}
 .pin--hit .pin-inner{transform:translateY(-4px) rotate(-4deg)}
 .pin--down .pin-inner{transform:rotate(-82deg) translate(-16px,10px); opacity:.55}
-
-/* ボール */
 .ball{
-  position:absolute; left:50%; bottom:6%; width:62px; height:62px; margin-left:-31px;
+  position:absolute; left:50%; bottom:6%; width:58px; height:58px; margin-left:-29px;
   border-radius:50%; background:radial-gradient(circle at 32% 28%, #4B6E92, #16243A 70%);
   box-shadow:0 8px 14px rgba(0,0,0,.4), inset -6px -8px 14px rgba(0,0,0,.4);
   transition:left .3s ease-out, bottom .3s ease-out, transform .3s ease-out;
   display:flex; gap:4px; align-items:center; justify-content:center; padding-bottom:10px;
 }
 .ball.is-rolling{bottom:60%; transform:scale(.5) rotate(220deg)}
-.ball-hole{width:8px; height:8px; border-radius:50%; background:#0C1420}
+.ball-hole{width:7px; height:7px; border-radius:50%; background:#0C1420}
 
-/* あたりバッジ */
-.atari{
-  position:absolute; inset:0; display:grid; place-items:center; pointer-events:none;
-  animation:pop .45s cubic-bezier(.2,1.5,.4,1);
+/* ── かんらんしゃ ── */
+.wheel-wrap{
+  background:#FAF6EE; border-radius:14px; padding:16px; display:grid; place-items:center;
 }
+.wheel{width:100%; max-width:340px; height:auto}
+.wheel-rim{fill:none; stroke:#D3DAE1; stroke-width:2.6}
+.wheel-spoke{stroke:#D3DAE1; stroke-width:2.4}
+.wheel-hub{fill:#B6BFC8}
+.wheel-arrow{fill:none; stroke:#F0983C; stroke-width:2.2; stroke-linecap:round}
+.wheel-arrowhead{fill:#F0983C}
+.gon-body{transition:fill .3s ease}
+.gon-arm{stroke:#FFFFFF; stroke-width:1.9; stroke-linecap:round}
+.gon-text{fill:#9AA6B2; font-size:7px; font-weight:800; transition:fill .3s ease}
+.gon.is-open .gon-text{fill:#3A2E24}
+.gon.is-open .gon-body{animation:gonPop .38s cubic-bezier(.2,1.6,.4,1)}
+@keyframes gonPop{from{transform:scale(.7); transform-origin:center} to{transform:scale(1)}}
+
+
+/* ── あたりバッジ ── */
+.atari{position:absolute; inset:0; display:grid; place-items:center; pointer-events:none;
+  animation:pop .45s cubic-bezier(.2,1.5,.4,1)}
 @keyframes pop{from{transform:scale(.5); opacity:0} to{transform:scale(1); opacity:1}}
-.atari-sun{width:230px; height:230px; animation:spin 9s linear infinite}
+.atari-sun{width:210px; height:210px; animation:spin 9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .atari-dot{fill:var(--pin)}
 .atari-core{fill:var(--pin)}
 .atari-text{position:absolute; text-align:center; color:var(--ink)}
-.atari-word{display:block; font-size:38px; font-weight:800; letter-spacing:.06em}
-.atari-score{
-  display:inline-block; margin-top:6px; padding:3px 12px; border:2.5px solid var(--ink);
-  font-size:15px; font-weight:800;
-}
+.atari-word{display:block; font-size:34px; font-weight:800; letter-spacing:.06em}
+.atari-score{display:inline-block; margin-top:6px; padding:3px 12px;
+  border:2.5px solid var(--ink); font-size:14px; font-weight:800}
 
-/* 認識テキスト */
-/* 判定カード */
+/* ── 判定カード ── */
 .judge-row{display:flex; gap:12px; margin-top:14px; align-items:stretch}
-.judge-slot{flex:none}
 .judge{
-  position:relative; width:92px; height:92px; border-radius:16px;
+  position:relative; width:86px; height:86px; flex:none; border-radius:16px;
   display:grid; place-items:center; border:3px solid #38495D; background:var(--night-2);
 }
-.judge-name{font-size:34px; font-weight:800; letter-spacing:.02em}
+.judge-name{font-size:30px; font-weight:800}
 .judge.is-empty .judge-name{color:#4E617A}
-.judge.is-ok{
-  border-color:var(--mint); color:var(--mint);
-  animation:okPop .4s cubic-bezier(.2,1.6,.4,1);
-}
+.judge.is-ok{border-color:var(--mint); color:var(--mint); animation:okPop .4s cubic-bezier(.2,1.6,.4,1)}
 @keyframes okPop{from{transform:scale(.7)} to{transform:scale(1)}}
-.judge.is-ng{
-  border-color:var(--stripe); color:#8FA3B8;
-  animation:ngShake .4s ease;
-}
-@keyframes ngShake{
-  0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)}
-}
+.judge.is-ng{border-color:var(--stripe); color:#8FA3B8; animation:ngShake .4s ease}
+@keyframes ngShake{0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)}}
 .judge-cross{position:absolute; inset:0; width:100%; height:100%}
-.judge-cross line{
-  stroke:var(--stripe); stroke-width:11; stroke-linecap:round;
-  stroke-dasharray:96; stroke-dashoffset:96; animation:draw .22s ease forwards;
-}
+.judge-cross line{stroke:var(--stripe); stroke-width:11; stroke-linecap:round;
+  stroke-dasharray:96; stroke-dashoffset:96; animation:draw .22s ease forwards}
 .judge-cross line:last-child{animation-delay:.14s}
 @keyframes draw{to{stroke-dashoffset:0}}
-
 .heard{
-  margin-top:0; flex:1; padding:12px 14px; border-radius:12px;
+  flex:1; padding:12px 14px; border-radius:12px;
   background:var(--night-2); border:2px dashed #38495D;
-  display:flex; flex-direction:column; justify-content:center; gap:6px;
+  display:flex; flex-direction:column; justify-content:center; gap:6px; min-width:0;
 }
-.heard-label{font-size:11px; letter-spacing:.16em; color:#7D8FA3; font-weight:800; flex:none}
-.heard-text{font-size:19px; font-weight:800; color:var(--mint); word-break:break-all}
-.notice{margin:10px 2px 16px; font-size:15px; font-weight:800; color:#B9C8D8}
-.notice.is-ng{color:var(--stripe)}
+.heard-label{font-size:11px; letter-spacing:.16em; color:#7D8FA3; font-weight:800}
+.heard-text{font-size:18px; font-weight:800; color:var(--mint); word-break:break-all}
 
-/* 操作 */
+/* ── 操作 ── */
+.notice{margin:10px 2px 14px; font-size:15px; font-weight:800; color:#B9C8D8}
+.notice.is-ng{color:var(--stripe)}
 .controls{display:flex; gap:10px; flex-wrap:wrap}
 .mic{
-  flex:1 1 190px; padding:15px 18px; border:none; border-radius:999px; cursor:pointer;
-  background:var(--amber); color:var(--ink); font-family:inherit; font-size:17px; font-weight:800;
+  flex:1 1 180px; padding:15px 18px; border:none; border-radius:999px; cursor:pointer;
+  background:var(--amber); color:var(--ink); font-size:16px; font-weight:800;
   display:flex; align-items:center; justify-content:center; gap:10px;
-  transition:transform .12s ease, filter .12s ease;
+  transition:transform .12s ease;
 }
 .mic:hover{transform:translateY(-2px)}
 .mic:disabled{opacity:.45; cursor:not-allowed; transform:none}
@@ -770,26 +1159,25 @@ const CSS = `
 @keyframes blink{50%{opacity:.25}}
 .ghost{
   padding:15px 20px; border-radius:999px; cursor:pointer; background:transparent;
-  border:2px solid #38495D; color:#A8BACD; font-family:inherit; font-size:15px; font-weight:800;
+  border:2px solid #38495D; color:#A8BACD; font-size:15px; font-weight:800;
 }
 .ghost:hover{border-color:var(--mint); color:var(--mint)}
-.ghost:disabled{opacity:.4; cursor:not-allowed}
-.ghost:disabled:hover{border-color:#38495D; color:#A8BACD}
-.fallback-note{margin:12px 2px 0; font-size:13px; color:#E2A751; line-height:1.7}
-
+.fallback-note{margin:12px 2px 0; font-size:13px; color:var(--lane); line-height:1.7}
 
 @media (max-width:420px){
-  .board-title{font-size:20px}
-  .lane{height:290px}
-  .pin-svg{width:38px; height:95px}
-  .pin{width:38px}
-  .pin-label{width:29px; height:29px; font-size:13px; top:-11px}
+  .hero-title{font-size:38px}
+  .lane{height:280px}
+  .pin-svg{width:36px; height:92px}
+  .pin{width:36px}
+  .pin-label{width:27px; height:27px; font-size:12px; top:-10px}
+  .judge{width:76px; height:76px}
+  .judge-name{font-size:26px}
 }
 @media (prefers-reduced-motion:reduce){
   .app *{animation-duration:.01ms !important; transition-duration:.01ms !important}
 }
 `;
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(OnkaiBowling));
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
   } catch (e) {
     showErr('起動エラー: ' + (e && e.message ? e.message : e));
   }
