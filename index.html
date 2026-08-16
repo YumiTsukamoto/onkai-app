@@ -104,40 +104,96 @@ const randIn = (min, max, exclude = -1) => {
 /* ═════════════════════════════════════════════
    音声認識テキストの正規化
    ═════════════════════════════════════════════ */
+/** 漢字1文字 → 音名（STTの誤変換対策） */
 const HOMOPHONE = {
+  // ド
   度: "ド",
   土: "ド",
   努: "ド",
   怒: "ド",
+  奴: "ド",
+  弩: "ド",
+  // レ
   令: "レ",
   礼: "レ",
   例: "レ",
+  齢: "レ",
+  麗: "レ",
+  玲: "レ",
+  嶺: "レ",
+  // ミ
   見: "ミ",
   実: "ミ",
   味: "ミ",
   三: "ミ",
+  未: "ミ",
+  巳: "ミ",
+  身: "ミ",
+  美: "ミ",
+  箕: "ミ",
+  深: "ミ",
+  // ファ
+  婦: "ファ",
+  譜: "ファ",
+  不: "ファ",
+  // ソ
   素: "ソ",
   祖: "ソ",
   想: "ソ",
+  疎: "ソ",
+  蘇: "ソ",
+  添: "ソ",
+  // ラ
   等: "ラ",
   裸: "ラ",
+  羅: "ラ",
+  良: "ラ",
+  // シ
   四: "シ",
   市: "シ",
   詩: "シ",
   死: "シ",
   氏: "シ",
-  婦: "ファ",
-  譜: "ファ"
+  志: "シ",
+  士: "シ",
+  子: "シ",
+  師: "シ",
+  紙: "シ",
+  資: "シ",
+  私: "シ",
+  支: "シ"
+};
+
+/** 複数の音がひとつの単語に変換されてしまうケース */
+const WORD = {
+  空: "ソラ",
+  // そら
+  足: "ラシ",
+  // らし
+  皿: "サラ",
+  // 誤検出よけ（音名なし）
+  何処: "ドコ",
+  何: "ド",
+  土砂: "ドシャ",
+  白: "シラ",
+  // しら
+  知ら: "シラ",
+  平: "タイラ",
+  見た: "ミタ",
+  実る: "ミノル"
 };
 const SINGLE = new Set(["ド", "レ", "ミ", "ソ", "ラ", "シ"]);
 const toKatakana = s => s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
 function parseNotes(raw) {
-  const s = toKatakana(raw).replace(/[\sー・、。,.!?！？]/g, "");
+  let t = raw;
+  // 単語まるごとの誤変換をさきに開く
+  for (const [k, v] of Object.entries(WORD)) t = t.split(k).join(v);
+  const s = toKatakana(t).replace(/[\sー・、。,.!?！？]/g, "");
   const out = [];
   let i = 0;
   while (i < s.length) {
     const two = s.slice(i, i + 2);
-    if (two === "ファ" || two === "フア") {
+    if (two === "ファ" || two === "フア" || two === "ハァ") {
       out.push("ファ");
       i += 2;
       continue;
@@ -228,6 +284,7 @@ function useSpeech(onNotes) {
   const recogRef = useRef(null);
   const wantRef = useRef(false);
   const cbRef = useRef(onNotes);
+  const interimRef = useRef("");
   useEffect(() => {
     cbRef.current = onNotes;
   }, [onNotes]);
@@ -241,17 +298,43 @@ function useSpeech(onNotes) {
     r.lang = "ja-JP";
     r.continuous = true;
     r.interimResults = true;
+    r.maxAlternatives = 5;
     r.onresult = ev => {
       let interim = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const res = ev.results[i];
         const text = res[0].transcript;
         if (res.isFinal) {
-          setHeard(text);
-          cbRef.current(parseNotes(text));
+          // 確定結果は漢字変換されがち。ひらがなのままの途中結果を保険に使う
+          let notes = parseNotes(text);
+          let shown = text;
+          if (!notes.length && interimRef.current) {
+            const fallback = parseNotes(interimRef.current);
+            if (fallback.length) {
+              notes = fallback;
+              shown = interimRef.current;
+            }
+          }
+          // 候補（alternatives）にひらがなのものがあれば拾う
+          if (!notes.length) {
+            for (let k = 1; k < res.length; k++) {
+              const alt = parseNotes(res[k].transcript);
+              if (alt.length) {
+                notes = alt;
+                shown = res[k].transcript;
+                break;
+              }
+            }
+          }
+          interimRef.current = "";
+          setHeard(shown);
+          cbRef.current(notes);
         } else interim += text;
       }
-      if (interim) setHeard(interim);
+      if (interim) {
+        interimRef.current = interim;
+        setHeard(interim);
+      }
     };
     r.onerror = ev => {
       if (ev.error === "not-allowed") {
@@ -304,7 +387,10 @@ function useSpeech(onNotes) {
     try {
       recogRef.current?.stop();
     } catch (e) {}
+    interimRef.current = "";
     setListening(false);
+    setHeard("");
+    setHint("");
   }, []);
   return {
     listening,
@@ -494,7 +580,8 @@ function PlayBar({
   speech,
   notice,
   judge,
-  onNext
+  onNext,
+  onReset
 }) {
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
     className: `notice ${judge && !judge.ok ? "is-ng" : ""}`,
@@ -508,6 +595,9 @@ function PlayBar({
   }, /*#__PURE__*/React.createElement("span", {
     className: "mic-dot"
   }), speech.listening ? "きいています" : "マイクを つかう"), /*#__PURE__*/React.createElement("button", {
+    className: "ghost",
+    onClick: onReset
+  }, "やりなおす"), /*#__PURE__*/React.createElement("button", {
     className: "ghost",
     onClick: onNext
   }, "つぎのもんだい")), !speech.supported && /*#__PURE__*/React.createElement("p", {
@@ -600,9 +690,14 @@ function BowlingGame({
     }
   }, [game.judge, game.idx]);
   const next = () => {
+    speech.stop();
     const n = randIn(0, 6, start);
     setStart(n);
     game.reset(upFrom(n, 5));
+  };
+  const retry = () => {
+    speech.stop();
+    game.reset();
   };
   const pinX = i => 32 + i * 9;
   return /*#__PURE__*/React.createElement("div", {
@@ -652,7 +747,8 @@ function BowlingGame({
     speech: speech,
     notice: game.notice,
     judge: game.judge,
-    onNext: next
+    onNext: next,
+    onReset: retry
   }));
 }
 
@@ -726,9 +822,14 @@ function WheelGame({
   });
   const speech = useSpeech(game.feed);
   const next = () => {
+    speech.stop();
     const n = up ? randIn(0, 7, start) : randIn(6, 13, start);
     setStart(n);
     game.reset(makeSeq(n));
+  };
+  const retry = () => {
+    speech.stop();
+    game.reset();
   };
   const R = 34;
   const seat = i => {
@@ -813,7 +914,8 @@ function WheelGame({
     speech: speech,
     notice: game.notice,
     judge: game.judge,
-    onNext: next
+    onNext: next,
+    onReset: retry
   }));
 }
 
@@ -875,9 +977,14 @@ function FireworksGame({
   });
   const speech = useSpeech(game.feed);
   const next = () => {
+    speech.stop();
     const n = randIn(4, 11, start);
     setStart(n);
     game.reset(makeSeq(n));
+  };
+  const retry = () => {
+    speech.stop();
+    game.reset();
   };
   const pos = i => ({
     x: 14 + i * 13,
@@ -1045,8 +1152,88 @@ function FireworksGame({
     speech: speech,
     notice: game.notice,
     judge: game.judge,
-    onNext: next
+    onNext: next,
+    onReset: retry
   }));
+}
+
+/* ═════════════════════════════════════════════
+   あそびかた
+   ═════════════════════════════════════════════ */
+const STEPS = [{
+  n: "1",
+  t: "マイクを つかう を おす",
+  d: "はじめて つかうときは「きょかする」を えらんでね"
+}, {
+  n: "2",
+  t: "さいしょの おとから じゅんばんに こえで いう",
+  d: "「ドレミファソ」と ひといきで いっても、1つずつ いっても OK"
+}, {
+  n: "3",
+  t: "あたると おとが なって すすむ",
+  d: "まちがえると ✗ が でて「ざんねん」。もういちど いってみよう"
+}, {
+  n: "4",
+  t: "ぜんぶ あてたら クリア",
+  d: "とくてんが もらえるよ。まちがえた かずだけ てんすうは へります"
+}];
+const GAME_HELP = [{
+  name: "ボウリング",
+  body: "5つの おとを あがっていく。あてると ピンが たおれるよ"
+}, {
+  name: "かんらんしゃ",
+  body: "7つの おとを あがっていく。ゴンドラに いろが つくよ"
+}, {
+  name: "ぎゃくまわり かんらんしゃ",
+  body: "7つの おとを さがっていく。まわる むきが はんたいだよ"
+}, {
+  name: "はなび",
+  body: "5つの おとを さがっていく。さいごまで いくと はなびが あがるよ"
+}];
+function HowTo({
+  onBack
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "screen"
+  }, /*#__PURE__*/React.createElement("header", {
+    className: "topbar"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "back",
+    onClick: onBack,
+    "aria-label": "もどる"
+  }, "‹"), /*#__PURE__*/React.createElement("span", {
+    className: "topbar-title"
+  }, "あそびかた")), /*#__PURE__*/React.createElement("ol", {
+    className: "steps"
+  }, STEPS.map(s => /*#__PURE__*/React.createElement("li", {
+    key: s.n,
+    className: "step"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "step-num"
+  }, s.n), /*#__PURE__*/React.createElement("span", {
+    className: "step-text"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "step-title"
+  }, s.t), /*#__PURE__*/React.createElement("span", {
+    className: "step-desc"
+  }, s.d))))), /*#__PURE__*/React.createElement("h2", {
+    className: "help-head"
+  }, "ゲームの しゅるい"), /*#__PURE__*/React.createElement("div", {
+    className: "help-list"
+  }, GAME_HELP.map(g => /*#__PURE__*/React.createElement("div", {
+    key: g.name,
+    className: "help-item"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "help-name"
+  }, g.name), /*#__PURE__*/React.createElement("span", {
+    className: "help-body"
+  }, g.body)))), /*#__PURE__*/React.createElement("h2", {
+    className: "help-head"
+  }, "うまく いかないとき"), /*#__PURE__*/React.createElement("ul", {
+    className: "tips"
+  }, /*#__PURE__*/React.createElement("li", null, "ききとれなかったら「やりなおす」を おしてね"), /*#__PURE__*/React.createElement("li", null, "しずかな ばしょで、はっきり いうと あたりやすいよ"), /*#__PURE__*/React.createElement("li", null, "iPhone は とちゅうで マイクが とまることがあるよ。もういちど おしてね")), /*#__PURE__*/React.createElement("p", {
+    className: "home-note"
+  }, "おうちのかたへ：マイクを つかいます。iPhone は Safari、Android・パソコンは Chrome でひらいてください。"));
 }
 
 /* ═════════════════════════════════════════════
@@ -1189,7 +1376,12 @@ function Home({
     className: "card-desc"
   }, g.desc)), /*#__PURE__*/React.createElement("span", {
     className: "card-go"
-  }, "›")))), /*#__PURE__*/React.createElement("p", {
+  }, "›")))), /*#__PURE__*/React.createElement("button", {
+    className: "howto-btn",
+    onClick: () => onPick("howto")
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "howto-mark"
+  }, "?"), "あそびかた"), /*#__PURE__*/React.createElement("p", {
     className: "home-note"
   }, "マイクを つかいます。iPhone は Safari、Android・パソコンは Chrome でひらいてね。"));
 }
@@ -1223,6 +1415,8 @@ function App() {
   }, /*#__PURE__*/React.createElement("style", null, CSS), screen === "home" && /*#__PURE__*/React.createElement(Home, {
     score: score,
     onPick: setScreen
+  }), screen === "howto" && /*#__PURE__*/React.createElement(HowTo, {
+    onBack: back
   }), screen === "bowling" && /*#__PURE__*/React.createElement(BowlingGame, {
     key: "bowling",
     ...common
@@ -1290,6 +1484,44 @@ const CSS = `
 .card-desc{font-size:12px; color:var(--sub)}
 .card-go{font-size:26px; color:#C9BBA6; line-height:1}
 .home-note{margin:22px 4px 0; font-size:12px; color:var(--sub); line-height:1.8}
+.howto-btn{
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  width:100%; margin-top:14px; padding:13px; cursor:pointer;
+  background:transparent; border:2px dashed #D9C7A8; border-radius:999px;
+  color:var(--sub); font-size:15px; font-weight:800;
+}
+.howto-btn:hover{border-color:var(--orange); color:var(--orange)}
+.howto-mark{
+  width:22px; height:22px; border-radius:50%; background:var(--orange); color:#FFFFFF;
+  display:grid; place-items:center; font-size:14px; line-height:1;
+}
+
+/* ── あそびかた ── */
+.steps{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px}
+.step{
+  display:flex; gap:12px; align-items:flex-start;
+  background:var(--paper); border:2px solid var(--line); border-radius:16px; padding:14px;
+}
+.step-num{
+  width:28px; height:28px; flex:none; border-radius:50%;
+  background:var(--amber); color:var(--ink);
+  display:grid; place-items:center; font-size:15px; font-weight:800;
+}
+.step-text{display:flex; flex-direction:column; gap:4px; min-width:0}
+.step-title{font-size:15px; font-weight:800; line-height:1.5}
+.step-desc{font-size:12.5px; color:var(--sub); line-height:1.7}
+.help-head{
+  margin:26px 4px 12px; font-size:13px; font-weight:800; letter-spacing:.14em; color:var(--sub);
+}
+.help-list{display:flex; flex-direction:column; gap:8px}
+.help-item{
+  background:var(--paper); border:2px solid var(--line); border-radius:14px; padding:12px 14px;
+  display:flex; flex-direction:column; gap:4px;
+}
+.help-name{font-size:15px; font-weight:800}
+.help-body{font-size:12.5px; color:var(--sub); line-height:1.7}
+.tips{margin:0; padding-left:20px; display:flex; flex-direction:column; gap:8px}
+.tips li{font-size:13px; color:var(--sub); line-height:1.7}
 
 /* ── ゲーム共通 ── */
 .topbar{display:flex; align-items:center; gap:12px; padding:2px 0 14px}
@@ -1454,29 +1686,33 @@ const CSS = `
 /* ── 操作 ── */
 .notice{margin:10px 2px 14px; font-size:15px; font-weight:800; color:var(--sub)}
 .notice.is-ng{color:var(--red)}
-.controls{display:flex; gap:10px; flex-wrap:wrap}
+.controls{display:flex; gap:8px; align-items:stretch}
 .mic{
-  flex:1 1 180px; padding:15px 18px; border:none; border-radius:999px; cursor:pointer;
-  background:var(--amber); color:var(--ink); font-size:16px; font-weight:800;
+  flex:1.3 1 0; min-width:0; padding:15px 10px; border:none; border-radius:999px; cursor:pointer;
+  background:var(--amber); color:var(--ink); font-size:14px; font-weight:800; white-space:nowrap;
   box-shadow:0 3px 0 #DCA71F;
-  display:flex; align-items:center; justify-content:center; gap:10px;
+  display:flex; align-items:center; justify-content:center; gap:7px;
   transition:transform .12s ease, box-shadow .12s ease;
 }
 .mic:hover{transform:translateY(-2px); box-shadow:0 5px 0 #DCA71F}
 .mic:active{transform:translateY(2px); box-shadow:0 1px 0 #DCA71F}
 .mic:disabled{opacity:.5; cursor:not-allowed; transform:none}
 .mic.is-live{background:var(--mint); color:#FFFFFF; box-shadow:0 3px 0 #23917F}
-.mic-dot{width:11px; height:11px; border-radius:50%; background:var(--ink); opacity:.3}
+.mic-dot{width:9px; height:9px; flex:none; border-radius:50%; background:var(--ink); opacity:.3}
 .mic.is-live .mic-dot{opacity:1; background:#FFFFFF; animation:blink 1s ease-in-out infinite}
 @keyframes blink{50%{opacity:.3}}
 .ghost{
-  padding:15px 20px; border-radius:999px; cursor:pointer; background:var(--paper);
-  border:2px solid var(--line); color:var(--sub); font-size:15px; font-weight:800;
+  flex:1 1 0; min-width:0; padding:15px 8px; border-radius:999px; cursor:pointer;
+  background:var(--paper); border:2px solid var(--line); color:var(--sub);
+  font-size:13px; font-weight:800; white-space:nowrap;
 }
 .ghost:hover{border-color:var(--orange); color:var(--orange)}
 .fallback-note{margin:12px 2px 0; font-size:13px; color:var(--red); line-height:1.7}
 
 @media (max-width:420px){
+  .controls{gap:6px}
+  .mic{font-size:13px; padding:14px 8px}
+  .ghost{font-size:12px; padding:14px 6px}
   .lane{height:280px}
   .pin-svg{width:36px; height:92px}
   .pin{width:36px}
