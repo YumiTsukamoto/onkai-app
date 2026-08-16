@@ -170,6 +170,11 @@ const WORD = {
   // そら
   足: "ラシ",
   // らし
+  そば: "ソラ",
+  // そば → そら
+  ソバ: "ソラ",
+  蕎麦: "ソラ",
+  側: "ソラ",
   皿: "サラ",
   // 誤検出よけ（音名なし）
   何処: "ドコ",
@@ -473,6 +478,18 @@ function useNoteGame(sequence, {
           await sleep(140);
         }
       }
+    } else if (i > 0 && name === seq[0].ja) {
+      // とちゅうで さいしょの おとを いったら「言いなおし」とみなす
+      setJudge({
+        name,
+        ok: true,
+        id: judgeIdRef.current
+      });
+      setNotice("さいしょから もういちど！");
+      idxRef.current = 1;
+      setIdx(1);
+      playNote(seq[0].note, true);
+      await sleep(stepMs);
     } else {
       missRef.current += 1;
       setMisses(missRef.current);
