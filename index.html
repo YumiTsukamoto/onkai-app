@@ -173,11 +173,6 @@ const WORD = {
   // そら
   足: "ラシ",
   // らし
-  そば: "ソラ",
-  // そば → そら
-  ソバ: "ソラ",
-  蕎麦: "ソラ",
-  側: "ソラ",
   皿: "サラ",
   // 誤検出よけ（音名なし）
   何処: "ドコ",
@@ -190,10 +185,34 @@ const WORD = {
   見た: "ミタ",
   実る: "ミノル"
 };
+
+/** 問題のむき（あがる／さがる）で 解釈がかわる ことば */
+const DIR_WORD = {
+  そば: {
+    up: "ソラ",
+    down: "ソファ"
+  },
+  ソバ: {
+    up: "ソラ",
+    down: "ソファ"
+  },
+  蕎麦: {
+    up: "ソラ",
+    down: "ソファ"
+  },
+  側: {
+    up: "ソラ",
+    down: "ソファ"
+  }
+};
 const SINGLE = new Set(["ド", "レ", "ミ", "ソ", "ラ", "シ"]);
 const toKatakana = s => s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
-function parseNotes(raw) {
+function parseNotes(raw, dir = "up") {
   let t = raw;
+  // むきによって よみかたが かわる ことば
+  for (const [k, v] of Object.entries(DIR_WORD)) {
+    t = t.split(k).join(dir === "down" ? v.down : v.up);
+  }
   // 単語まるごとの誤変換をさきに開く
   for (const [k, v] of Object.entries(WORD)) t = t.split(k).join(v);
   const s = toKatakana(t).replace(/[\sー・、。,.!?！？]/g, "");
@@ -284,7 +303,7 @@ const playBuzz = () => {
 /* ═════════════════════════════════════════════
    音声認識フック
    ═════════════════════════════════════════════ */
-function useSpeech(onNotes) {
+function useSpeech(onNotes, dir = "up") {
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState("");
   const [supported, setSupported] = useState(true);
@@ -292,10 +311,14 @@ function useSpeech(onNotes) {
   const recogRef = useRef(null);
   const wantRef = useRef(false);
   const cbRef = useRef(onNotes);
+  const dirRef = useRef(dir);
   const interimRef = useRef("");
   useEffect(() => {
     cbRef.current = onNotes;
   }, [onNotes]);
+  useEffect(() => {
+    dirRef.current = dir;
+  }, [dir]);
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
@@ -314,10 +337,10 @@ function useSpeech(onNotes) {
         const text = res[0].transcript;
         if (res.isFinal) {
           // 確定結果は漢字変換されがち。ひらがなのままの途中結果を保険に使う
-          let notes = parseNotes(text);
+          let notes = parseNotes(text, dirRef.current);
           let shown = text;
           if (!notes.length && interimRef.current) {
-            const fallback = parseNotes(interimRef.current);
+            const fallback = parseNotes(interimRef.current, dirRef.current);
             if (fallback.length) {
               notes = fallback;
               shown = interimRef.current;
@@ -326,7 +349,7 @@ function useSpeech(onNotes) {
           // 候補（alternatives）にひらがなのものがあれば拾う
           if (!notes.length) {
             for (let k = 1; k < res.length; k++) {
-              const alt = parseNotes(res[k].transcript);
+              const alt = parseNotes(res[k].transcript, dirRef.current);
               if (alt.length) {
                 notes = alt;
                 shown = res[k].transcript;
@@ -700,7 +723,7 @@ function BowlingGame({
       addScore(p);
     }
   });
-  const speech = useSpeech(game.feed);
+  const speech = useSpeech(game.feed, "up");
   const [rolling, setRolling] = useState(null);
   useEffect(() => {
     if (game.judge?.ok) {
@@ -840,7 +863,7 @@ function WheelGame({
     },
     startNotice: up ? "さいしょの おとから じゅんばんに あがっていこう" : "さいしょの おとから じゅんばんに さがっていこう"
   });
-  const speech = useSpeech(game.feed);
+  const speech = useSpeech(game.feed, up ? "up" : "down");
   const next = () => {
     speech.stop();
     const n = up ? randIn(0, 7, start) : randIn(6, 13, start);
@@ -995,7 +1018,7 @@ function FireworksGame({
     },
     startNotice: "さいしょの おとから したまで さがっていこう"
   });
-  const speech = useSpeech(game.feed);
+  const speech = useSpeech(game.feed, "down");
   const next = () => {
     speech.stop();
     const n = randIn(4, 11, start);
