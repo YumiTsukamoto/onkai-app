@@ -1201,6 +1201,237 @@ function FireworksGame({
 }
 
 /* ═════════════════════════════════════════════
+   ゲーム5: おんぷカード（フラッシュカード）
+   ═════════════════════════════════════════════ */
+const LETTER_JA = {
+  C: "ド",
+  D: "レ",
+  E: "ミ",
+  F: "ファ",
+  G: "ソ",
+  A: "ラ",
+  B: "シ"
+};
+const LETTER_STEP = {
+  C: 0,
+  D: 1,
+  E: 2,
+  F: 3,
+  G: 4,
+  A: 5,
+  B: 6
+};
+
+/** 音名 → 全音階上の通し番号（C4 = 28） */
+const diatonic = n => {
+  const letter = n[0];
+  const oct = parseInt(n.slice(1), 10);
+  return oct * 7 + LETTER_STEP[letter];
+};
+const makeCard = (n, clef) => ({
+  n,
+  clef,
+  ja: LETTER_JA[n[0]],
+  d: diatonic(n)
+});
+const CARDS = [
+// ト音記号：ド〜たかいド
+...["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"].map(n => makeCard(n, "treble")),
+// ヘ音記号：ド〜ひくいド
+...["C4", "B3", "A3", "G3", "F3", "E3", "D3", "C3"].map(n => makeCard(n, "bass"))];
+const CLEF = {
+  // いちばん下の線の音
+  treble: {
+    sym: "\u{1D11E}",
+    bottomD: diatonic("E4"),
+    size: 52,
+    y: 49
+  },
+  bass: {
+    sym: "\u{1D122}",
+    bottomD: diatonic("G2"),
+    size: 34,
+    y: 43
+  }
+};
+const STAFF = {
+  top: 20,
+  gap: 6,
+  x1: 6,
+  x2: 94,
+  noteX: 66
+};
+const staffY = i => STAFF.top + i * STAFF.gap; // 0=いちばん上の線
+
+function NoteCard({
+  card
+}) {
+  const conf = CLEF[card.clef];
+  const bottomY = staffY(4);
+  const steps = card.d - conf.bottomD;
+  const y = bottomY - steps * (STAFF.gap / 2);
+
+  // かせん（ledger line）
+  const ledgers = [];
+  if (steps < 0) for (let k = -2; k >= steps; k -= 2) ledgers.push(bottomY - k * (STAFF.gap / 2));
+  if (steps > 8) for (let k = 10; k <= steps; k += 2) ledgers.push(bottomY - k * (STAFF.gap / 2));
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 100 68",
+    className: "card-staff"
+  }, /*#__PURE__*/React.createElement("text", {
+    x: "14",
+    y: conf.y,
+    className: "clef",
+    style: {
+      fontSize: conf.size
+    }
+  }, conf.sym), /*#__PURE__*/React.createElement("g", {
+    transform: `translate(${STAFF.noteX} ${y})`
+  }, /*#__PURE__*/React.createElement("ellipse", {
+    rx: "5",
+    ry: "3.4",
+    className: "note-head"
+  }), /*#__PURE__*/React.createElement("ellipse", {
+    rx: "2.6",
+    ry: "1.5",
+    className: "note-hole",
+    transform: "rotate(-22)"
+  })), [0, 1, 2, 3, 4].map(i => /*#__PURE__*/React.createElement("line", {
+    key: i,
+    x1: STAFF.x1,
+    y1: staffY(i),
+    x2: STAFF.x2,
+    y2: staffY(i),
+    className: "staff-line"
+  })), ledgers.map((ly, i) => /*#__PURE__*/React.createElement("line", {
+    key: i,
+    x1: STAFF.noteX - 8,
+    y1: ly,
+    x2: STAFF.noteX + 8,
+    y2: ly,
+    className: "staff-line"
+  })));
+}
+function FlashCardGame({
+  score,
+  addScore,
+  onBack
+}) {
+  const shuffle = () => {
+    const a = CARDS.map((c, i) => ({
+      c,
+      i
+    }));
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a.map(x => x.c);
+  };
+  const deckRef = useRef(shuffle());
+  const posRef = useRef(0);
+  const [card, setCard] = useState(() => deckRef.current[0]);
+  const [judge, setJudge] = useState(null);
+  const [notice, setNotice] = useState("この おんぷは なんの おと？");
+  const [hit, setHit] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const cardRef = useRef(card);
+  const lockRef = useRef(false);
+  const judgeIdRef = useRef(0);
+  const timerRef = useRef(null);
+  useEffect(() => {
+    cardRef.current = card;
+  }, [card]);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+  const nextCard = useCallback(() => {
+    posRef.current += 1;
+    if (posRef.current >= deckRef.current.length) {
+      deckRef.current = shuffle();
+      posRef.current = 0;
+    }
+    setCard(deckRef.current[posRef.current]);
+    setJudge(null);
+    setHit(false);
+    setNotice("この おんぷは なんの おと？");
+    lockRef.current = false;
+  }, []);
+  const skip = useCallback(() => {
+    clearTimeout(timerRef.current);
+    setStreak(0);
+    nextCard();
+  }, [nextCard]);
+  const onNotes = useCallback(names => {
+    if (!names.length || lockRef.current) return;
+    const name = names[0];
+    const cur = cardRef.current;
+    judgeIdRef.current += 1;
+    if (name === cur.ja) {
+      lockRef.current = true;
+      setJudge({
+        name,
+        ok: true,
+        id: judgeIdRef.current
+      });
+      setNotice("せいかい！");
+      setHit(true);
+      setStreak(s => s + 1);
+      addScore(10);
+      playNote(cur.n, false); // カードは おとだけ ならす
+      timerRef.current = setTimeout(nextCard, 1200);
+    } else {
+      setJudge({
+        name,
+        ok: false,
+        id: judgeIdRef.current
+      });
+      playBuzz();
+      setNotice("ざんねん");
+    }
+  }, [addScore, nextCard]);
+  const speech = useSpeech(onNotes, "up");
+  return /*#__PURE__*/React.createElement("div", {
+    className: "screen"
+  }, /*#__PURE__*/React.createElement(TopBar, {
+    title: "おんぷカード",
+    score: score,
+    onBack: onBack
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "streak"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "streak-label"
+  }, "れんぞく せいかい"), /*#__PURE__*/React.createElement("span", {
+    className: "streak-num"
+  }, streak)), /*#__PURE__*/React.createElement("div", {
+    className: `stage ${judge && !judge.ok ? "is-miss" : ""}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card-wrap"
+  }, /*#__PURE__*/React.createElement(NoteCard, {
+    card: card
+  }), hit && /*#__PURE__*/React.createElement(Cleared, {
+    points: 10
+  }))), /*#__PURE__*/React.createElement(JudgeCard, {
+    judge: judge,
+    heard: speech.heard
+  }), /*#__PURE__*/React.createElement("p", {
+    className: `notice ${judge && !judge.ok ? "is-ng" : ""}`,
+    "aria-live": "polite"
+  }, speech.hint || notice), /*#__PURE__*/React.createElement("div", {
+    className: "controls"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: `mic ${speech.listening ? "is-live" : ""}`,
+    onClick: speech.toggle,
+    disabled: !speech.supported
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "mic-dot"
+  }), speech.listening ? "きいています" : "マイクを つかう"), /*#__PURE__*/React.createElement("button", {
+    className: "ghost",
+    onClick: skip
+  }, "つぎの カード")), !speech.supported && /*#__PURE__*/React.createElement("p", {
+    className: "fallback-note"
+  }, "このブラウザは音声にんしきに たいおうしていません。 iPhone は Safari、Android・パソコンは Chrome でひらいてください。"));
+}
+
+/* ═════════════════════════════════════════════
    あそびかた
    ═════════════════════════════════════════════ */
 const STEPS = [{
@@ -1232,6 +1463,9 @@ const GAME_HELP = [{
 }, {
   name: "はなび",
   body: "5つの おとを さがっていく。さいごまで いくと はなびが あがるよ"
+}, {
+  name: "おんぷカード",
+  body: "1まいずつ でてくる おんぷを こたえる。あたると つぎの カードに すすむよ"
 }];
 function HowTo({
   onBack
@@ -1302,6 +1536,11 @@ const GAMES = [{
   name: "はなび",
   desc: "したまで さがって うちあげよう",
   icon: "fire"
+}, {
+  id: "cards",
+  name: "おんぷカード",
+  desc: "でてきた おんぷを こえで こたえよう",
+  icon: "note"
 }];
 function GameIcon({
   kind
@@ -1316,6 +1555,33 @@ function GameIcon({
     }), /*#__PURE__*/React.createElement("path", {
       d: "M13.5 34h13v5.5h-13zM12 42h16v5.5H12z",
       className: "pin-stripe"
+    }));
+  }
+  if (kind === "note") {
+    return /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 100 100",
+      className: "card-icon"
+    }, [30, 44, 58, 72].map(y => /*#__PURE__*/React.createElement("line", {
+      key: y,
+      x1: "8",
+      y1: y,
+      x2: "92",
+      y2: y,
+      stroke: "#C9D2DB",
+      strokeWidth: "4"
+    })), /*#__PURE__*/React.createElement("ellipse", {
+      cx: "60",
+      cy: "51",
+      rx: "15",
+      ry: "10.5",
+      fill: "#3B2F26"
+    }), /*#__PURE__*/React.createElement("ellipse", {
+      cx: "60",
+      cy: "51",
+      rx: "7.5",
+      ry: "4.4",
+      fill: "#FFFFFF",
+      transform: "rotate(-22 60 51)"
     }));
   }
   if (kind === "fire") {
@@ -1474,6 +1740,9 @@ function App() {
   }), screen === "fireworks" && /*#__PURE__*/React.createElement(FireworksGame, {
     key: "fw",
     ...common
+  }), screen === "cards" && /*#__PURE__*/React.createElement(FlashCardGame, {
+    key: "cards",
+    ...common
   }));
 }
 
@@ -1538,6 +1807,23 @@ const CSS = `
   width:22px; height:22px; border-radius:50%; background:var(--orange); color:#FFFFFF;
   display:grid; place-items:center; font-size:14px; line-height:1;
 }
+
+/* ── おんぷカード ── */
+.streak{display:flex; align-items:baseline; gap:10px; margin-bottom:12px}
+.streak-label{font-size:11px; letter-spacing:.14em; color:var(--sub); font-weight:800}
+.streak-num{font-size:22px; font-weight:800; color:var(--mint)}
+.card-wrap{
+  position:relative; background:var(--paper); border:2px solid var(--line); border-radius:18px;
+  padding:26px 16px; display:grid; place-items:center; min-height:230px;
+}
+.card-staff{width:100%; max-width:330px; height:auto}
+.staff-line{stroke:#3B2F26; stroke-width:0.9}
+.clef{
+  fill:#3B2F26;
+  font-family:"Bravura","Noto Music","Segoe UI Symbol","Apple Symbols",serif;
+}
+.note-head{fill:#3B2F26}
+.note-hole{fill:#FFFFFF}
 
 /* ── あそびかた ── */
 .steps{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px}
