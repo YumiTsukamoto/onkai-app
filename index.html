@@ -113,6 +113,11 @@ const HOMOPHONE = {
   怒: "ド",
   奴: "ド",
   弩: "ド",
+  銅: "ド",
+  動: "ド",
+  堂: "ド",
+  胴: "ド",
+  同: "ド",
   // レ
   令: "レ",
   礼: "レ",
@@ -135,6 +140,8 @@ const HOMOPHONE = {
   ビ: "ミ",
   微: "ミ",
   眉: "ミ",
+  "3": "ミ",
+  "３": "ミ",
   // ファ
   婦: "ファ",
   譜: "ファ",
@@ -146,6 +153,11 @@ const HOMOPHONE = {
   疎: "ソ",
   蘇: "ソ",
   添: "ソ",
+  相: "ソ",
+  走: "ソ",
+  草: "ソ",
+  層: "ソ",
+  僧: "ソ",
   // ラ
   等: "ラ",
   裸: "ラ",
@@ -164,7 +176,12 @@ const HOMOPHONE = {
   紙: "シ",
   資: "シ",
   私: "シ",
-  支: "シ"
+  支: "シ",
+  史: "シ",
+  矢: "シ",
+  시: "シ",
+  "4": "シ",
+  "４": "シ"
 };
 
 /** 複数の音がひとつの単語に変換されてしまうケース */
@@ -357,9 +374,17 @@ function useSpeech(onNotes, dir = "up") {
               }
             }
           }
+          // ぜんぶの候補から 音名の候補を あつめる（単音のカード用）
+          const pool = new Set();
+          for (const t of [text, interimRef.current, ...Array.from({
+            length: res.length
+          }, (_, k) => res[k].transcript)]) {
+            if (!t) continue;
+            for (const n of parseNotes(t, dirRef.current)) pool.add(n);
+          }
           interimRef.current = "";
           setHeard(shown);
-          cbRef.current(notes);
+          cbRef.current(notes, Array.from(pool));
         } else interim += text;
       }
       if (interim) {
@@ -1360,12 +1385,14 @@ function FlashCardGame({
     setStreak(0);
     nextCard();
   }, [nextCard]);
-  const onNotes = useCallback(names => {
+  const onNotes = useCallback((names, pool = []) => {
     if (!names.length || lockRef.current) return;
-    const name = names[0];
     const cur = cardRef.current;
+    // 単音は ききまちがえが おおいので、候補のどれかが あっていれば OK
+    const matched = names.includes(cur.ja) || pool.includes(cur.ja);
+    const name = matched ? cur.ja : names[0];
     judgeIdRef.current += 1;
-    if (name === cur.ja) {
+    if (matched) {
       lockRef.current = true;
       setJudge({
         name,
